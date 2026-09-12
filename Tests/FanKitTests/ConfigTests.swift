@@ -45,3 +45,31 @@ struct SensorNameTests {
         #expect(!names[2].contains("·"))
     }
 }
+
+/// The default chart was read off an M1 Max. On a chip that names its sensors
+/// differently none of those keys exist, and the chart waited for ever.
+@Suite("Charted sensors on other hardware")
+struct TrackedDefaultsTests {
+    @Test("where the M1 Max sensors exist they are kept, in their order")
+    func keepsKnown() {
+        let available = ["TG0B", "TCMz", "Tp0D", "Txxx"]
+        #expect(SensorCatalog.trackedDefaults(available: available) == ["TCMz", "Tp0D", "TG0B"])
+    }
+
+    @Test("where none exist, this machine's own sensors are charted")
+    func picksFromThisMachine() {
+        let available = ["Tp09", "Tp01", "Tp05", "Tg0f", "TG1d", "Ts0S", "TH0a", "TB1T"]
+        let chosen = SensorCatalog.trackedDefaults(available: available)
+        #expect(!chosen.isEmpty)
+        #expect(chosen.allSatisfy(available.contains))
+        #expect(chosen.count <= 6)
+        // CPU first, and the same choice on every run.
+        #expect(SensorCatalog.info(for: chosen[0]).group == .cpu)
+        #expect(chosen == SensorCatalog.trackedDefaults(available: available.reversed()))
+    }
+
+    @Test("a machine with nothing readable charts nothing, rather than inventing keys")
+    func nothingAvailable() {
+        #expect(SensorCatalog.trackedDefaults(available: []).isEmpty)
+    }
+}

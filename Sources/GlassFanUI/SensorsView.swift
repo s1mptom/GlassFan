@@ -6,7 +6,12 @@ struct SensorsView: View {
     @State private var search = ""
     @State private var onlyCharted = false
 
-    private var tracked: Set<String> { Set(client.config?.trackedSensors ?? []) }
+    /// Only sensors this Mac actually has: a charted key that does not exist here
+    /// is not on the chart, and counting it made "charted" a lie.
+    private var tracked: Set<String> {
+        Set(client.config?.trackedSensors ?? [])
+            .intersection((client.snapshot?.sensors ?? []).map(\.key))
+    }
 
     /// Buckets the readings in a single pass.
     ///

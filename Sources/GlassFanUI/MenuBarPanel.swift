@@ -17,8 +17,10 @@ struct MenuBarPanel: View {
             header
 
             if client.isConnected {
-                fanRow
-                modeSwitch
+                if client.snapshot?.fans.isEmpty == false {
+                    fanRow
+                    modeSwitch
+                }
                 hottestSensors
                 Divider().overlay(Palette.ink.opacity(0.09))
             } else {

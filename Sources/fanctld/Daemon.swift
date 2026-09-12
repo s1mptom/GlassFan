@@ -35,6 +35,15 @@ final class Daemon {
         server = SocketServer(path: Self.socketPath)
         config = Self.loadConfig(fanCount: hardware.fans.count)
         discoverTemperatureSensors()
+        // A charted list none of whose sensors exist here - a fresh install on a
+        // chip that names its sensors differently, or a config carried over from
+        // another Mac - gets this machine's own. A list with anything real in it is
+        // the user's choice and is left alone.
+        if Set(config.trackedSensors).isDisjoint(with: temperatureKeys) {
+            config.trackedSensors = SensorCatalog.trackedDefaults(available: temperatureKeys)
+            Log.info("charted sensors chosen for this hardware: \(config.trackedSensors.joined(separator: ", "))")
+            saveConfig()
+        }
         rebuildControllers()
     }
 

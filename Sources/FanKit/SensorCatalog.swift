@@ -157,6 +157,28 @@ public enum SensorCatalog {
         }
     }
 
+    /// What to chart on a machine whose sensors are `available`.
+    ///
+    /// `defaultTracked` was read off an M1 Max, and other Apple silicon names its
+    /// sensors differently: on an M3 none of those keys may exist, and since the
+    /// history only records charted sensors, the overview chart sat on
+    /// "Collecting data" for ever. Those keys are kept where they exist; where
+    /// none do, the chart gets this machine's own sensors, a couple from the CPU
+    /// and one from each other group, picked by key so the choice is the same on
+    /// every launch.
+    public static func trackedDefaults(available: [String]) -> [String] {
+        let present = Set(available)
+        let known = defaultTracked.filter(present.contains)
+        if !known.isEmpty { return known }
+
+        var byGroup: [SensorGroup: [String]] = [:]
+        for key in available.sorted() {
+            byGroup[info(for: key).group, default: []].append(key)
+        }
+        let plan: [(SensorGroup, Int)] = [(.cpu, 2), (.gpu, 1), (.comfort, 1), (.storage, 1), (.battery, 1)]
+        return plan.flatMap { group, take in Array((byGroup[group] ?? []).prefix(take)) }
+    }
+
     public static let defaultTracked = [
         "TCMz", "Tp0D", "Tp0E", "TG0B", "Ts0P", "Ts1P", "TaLW", "TaRW", "TB0T", "TH0x",
     ]

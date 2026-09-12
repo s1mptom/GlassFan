@@ -61,7 +61,19 @@ struct OverviewView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            dials.riseIn(0.02)
+            if client.snapshot?.fans.isEmpty == false {
+                dials.riseIn(0.02)
+            } else if client.snapshot != nil {
+                // No fans to draw - a MacBook Air. Said once, quietly, instead of an
+                // empty row where the dials would be.
+                Text(L10n.t("Пассивное охлаждение — в этом Mac нет вентиляторов",
+                            "Passive cooling - this Mac has no fans"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink.opacity(0.4))
+                    .padding(.horizontal, 30)
+                    .padding(.top, 22)
+                    .riseIn(0.02)
+            }
             statsRow.riseIn(0.10)
             chart.riseIn(0.18)
         }

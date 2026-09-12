@@ -20,17 +20,19 @@ enum DemoFixture {
 
     /// `alarming` is the state nobody sees during normal use and which therefore
     /// rots: one fan run away on the emergency rule, the other refusing writes.
-    static func snapshot(alarming: Bool = false) -> Snapshot {
-        var config = AppConfig.default(fanCount: 2)
-        config.fans[0].mode = .curve
-        config.fans[0].sensorKeys = ["TCMz", "TaRT"]
-        config.fans[0].curve = .defaultCurve(minRPM: limits0.minRPM, maxRPM: limits0.maxRPM)
+    static func snapshot(alarming: Bool = false, fanless: Bool = false) -> Snapshot {
+        var config = AppConfig.default(fanCount: fanless ? 0 : 2)
+        if !fanless {
+            config.fans[0].mode = .curve
+            config.fans[0].sensorKeys = ["TCMz", "TaRT"]
+            config.fans[0].curve = .defaultCurve(minRPM: limits0.minRPM, maxRPM: limits0.maxRPM)
+        }
         config.trackedSensors = ["TCMz", "Tp0D", "TaRT", "TG0B"]
 
         return Snapshot(
             time: Date().timeIntervalSince1970,
             sensors: temperatures.map { SensorReading(key: $0.0, value: $0.1) },
-            fans: [
+            fans: fanless ? [] : [
                 FanReading(index: 0,
                            actualRPM: alarming ? 5348 : 2600,
                            targetRPM: alarming ? 5348 : 2600,

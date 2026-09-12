@@ -89,7 +89,8 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: client.isConnected ? "fan" : "exclamationmark.triangle")
+            Image(systemName: !client.isConnected ? "exclamationmark.triangle"
+                  : client.snapshot?.fans.isEmpty == true ? "thermometer.medium" : "fan")
             if let hottest = client.hottest {
                 Text(Format.temperature(hottest.value))
             }

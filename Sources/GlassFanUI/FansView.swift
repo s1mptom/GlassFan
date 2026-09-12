@@ -17,8 +17,10 @@ struct FansView: View {
     var body: some View {
         if !client.isConnected {
             DaemonMissingNotice().frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if fans.isEmpty {
+        } else if client.snapshot == nil {
             DataHint()
+        } else if fans.isEmpty {
+            NoFansNotice().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             HStack(alignment: .top, spacing: 26) {
                 sidebar.riseIn(0.02)
@@ -499,3 +501,27 @@ struct SensorPicker: View {
         .buttonStyle(.plain)
     }
 }
+
+/// A Mac with no fan at all - every MacBook Air. "Collecting data" would spin
+/// here for ever, waiting for a fan that is not coming.
+struct NoFansNotice: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "wind")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(Palette.ink.opacity(0.3))
+            Text(L10n.t("В этом Mac нет вентиляторов", "This Mac has no fans"))
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Palette.ink.opacity(0.88))
+            Text(L10n.t("Он охлаждается пассивно — управлять здесь нечем, но все датчики температуры на месте.",
+                        "It is cooled passively, so there is nothing to control - but every temperature sensor is still here."))
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink.opacity(0.45))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .riseIn(0.05)
+    }
+}
+

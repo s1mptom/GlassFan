@@ -14,6 +14,7 @@ private struct PreviewShell: View {
     init(_ screen: Screen = .overview,
          connected: Bool = true,
          alarming: Bool = false,
+         fanless: Bool = false,
          frost: Double = GlassStyle.defaultFrost,
          tint: Double = GlassStyle.defaultTint) {
         // The window restores these, so seeding them is how a preview picks a screen
@@ -21,7 +22,7 @@ private struct PreviewShell: View {
         UserDefaults.standard.set(screen.rawValue, forKey: Screen.storageKey)
         UserDefaults.standard.set(frost, forKey: GlassStyle.frostKey)
         UserDefaults.standard.set(tint, forKey: GlassStyle.tintKey)
-        client = .demo(connected: connected, alarming: alarming)
+        client = .demo(connected: connected, alarming: alarming, fanless: fanless)
     }
 
     var body: some View {
@@ -55,6 +56,10 @@ private struct PreviewShell: View {
 
 /// The popover behind the plus in Curve sensors, which has no other way to be seen
 /// short of clicking into it.
+/// Every MacBook Air: sensors, and no fans at all.
+#Preview("No fans · overview") { PreviewShell(.overview, fanless: true) }
+#Preview("No fans · fans") { PreviewShell(.fans, fanless: true) }
+
 #Preview("Sensor picker") {
     @Previewable @State var selection = ["TCMz", "TaRT"]
     return SensorPicker(selection: $selection)
