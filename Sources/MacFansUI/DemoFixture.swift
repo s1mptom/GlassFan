@@ -18,7 +18,9 @@ enum DemoFixture {
         ("Te02", 63.2), ("Tp0E", 64.5),
     ]
 
-    static func snapshot() -> Snapshot {
+    /// `alarming` is the state nobody sees during normal use and which therefore
+    /// rots: one fan run away on the emergency rule, the other refusing writes.
+    static func snapshot(alarming: Bool = false) -> Snapshot {
         var config = AppConfig.default(fanCount: 2)
         config.fans[0].mode = .curve
         config.fans[0].sensorKeys = ["TCMz", "TaRT"]
@@ -29,10 +31,16 @@ enum DemoFixture {
             time: Date().timeIntervalSince1970,
             sensors: temperatures.map { SensorReading(key: $0.0, value: $0.1) },
             fans: [
-                FanReading(index: 0, actualRPM: 2600, targetRPM: 2600, limits: limits0,
-                           mode: .curve, forced: true, drivingTemp: 78.5, emergency: false),
+                FanReading(index: 0,
+                           actualRPM: alarming ? 5348 : 2600,
+                           targetRPM: alarming ? 5348 : 2600,
+                           limits: limits0,
+                           mode: .curve, forced: true, drivingTemp: alarming ? 97 : 78.5,
+                           emergency: alarming),
                 FanReading(index: 1, actualRPM: 1654, targetRPM: 1654, limits: limits1,
-                           mode: .auto, forced: false, drivingTemp: nil, emergency: false),
+                           mode: alarming ? .fixed : .auto, forced: false, drivingTemp: nil,
+                           emergency: false,
+                           writeError: alarming ? "SMC write refused (kIOReturnNotPrivileged)" : nil),
             ],
             config: config,
             daemonVersion: "demo"

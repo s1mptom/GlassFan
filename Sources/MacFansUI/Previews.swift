@@ -13,6 +13,7 @@ private struct PreviewShell: View {
 
     init(_ screen: Screen = .overview,
          connected: Bool = true,
+         alarming: Bool = false,
          frost: Double = GlassStyle.defaultFrost,
          tint: Double = GlassStyle.defaultTint) {
         // The window restores these, so seeding them is how a preview picks a screen
@@ -20,7 +21,7 @@ private struct PreviewShell: View {
         UserDefaults.standard.set(screen.rawValue, forKey: Screen.storageKey)
         UserDefaults.standard.set(frost, forKey: GlassStyle.frostKey)
         UserDefaults.standard.set(tint, forKey: GlassStyle.tintKey)
-        client = .demo(connected: connected)
+        client = .demo(connected: connected, alarming: alarming)
     }
 
     var body: some View {
@@ -47,6 +48,10 @@ private struct PreviewShell: View {
 #Preview("Clear glass") { PreviewShell(.overview, frost: 0.08, tint: 0) }
 
 #Preview("Daemon missing") { PreviewShell(.overview, connected: false) }
+
+/// One fan run away on the emergency rule, the other refusing writes - the states
+/// that must not look like an ordinary afternoon.
+#Preview("Trouble") { PreviewShell(.overview, alarming: true) }
 
 /// The popover behind the plus in Curve sensors, which has no other way to be seen
 /// short of clicking into it.

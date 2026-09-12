@@ -79,7 +79,8 @@ struct OverviewView: View {
         HStack(spacing: 18) {
             ForEach(client.snapshot?.fans ?? []) { fan in
                 HStack(spacing: 20) {
-                    FanDial(rpm: fan.actualRPM, limits: fan.limits, controlled: fan.forced)
+                    FanDial(rpm: fan.actualRPM, limits: fan.limits, controlled: fan.forced,
+                            alert: fan.emergency || fan.writeError != nil)
 
                     VStack(alignment: .leading, spacing: 9) {
                         Text(L10n.t("Вентилятор \(fan.index + 1)", "Fan \(fan.index + 1)"))
@@ -102,9 +103,10 @@ struct OverviewView: View {
     }
 
     private func modeChip(_ fan: FanReading) -> some View {
+        let refused = fan.writeError != nil
         let controlled = fan.forced
         let label: String = {
-            if fan.writeError != nil { return L10n.t("запись отклонена", "write refused") }
+            if refused { return L10n.t("запись отклонена", "write refused") }
             switch fan.mode {
             case .auto:  return L10n.t("Система", "System")
             case .fixed: return L10n.t("Фиксировано", "Fixed")
@@ -112,27 +114,41 @@ struct OverviewView: View {
             }
         }()
 
+        // A refused write is the app failing at its one job, so it gets the alarm
+        // colour rather than the same grey a fan on auto gets.
+        let accent: Color = refused ? Palette.critical
+                                    : controlled ? Palette.calm : Palette.ink.opacity(0.66)
+
         return HStack(spacing: 7) {
-            if controlled && fan.mode == .curve {
+            if refused {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Palette.critical)
+            } else if controlled && fan.mode == .curve {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Palette.calm)
             }
             Text(label)
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(controlled ? Palette.calm : Palette.ink.opacity(0.66))
+                .foregroundStyle(accent)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .background(
-            Capsule().fill(controlled ? Palette.calm.opacity(0.16) : Palette.ink.opacity(0.07))
+            Capsule().fill(refused ? Palette.critical.opacity(0.14)
+                           : controlled ? Palette.calm.opacity(0.16) : Palette.ink.opacity(0.07))
                 .overlay(Capsule().strokeBorder(
-                    controlled ? Palette.calm.opacity(0.32) : Palette.ink.opacity(0.14), lineWidth: 0.5))
+                    refused ? Palette.critical.opacity(0.35)
+                    : controlled ? Palette.calm.opacity(0.32) : Palette.ink.opacity(0.14),
+                    lineWidth: 0.5))
         )
     }
 
     private func subtitle(for fan: FanReading) -> String {
         if fan.emergency { return L10n.t("аварийный режим", "emergency") }
+        // Without this the fan reads "write refused" and "under control" at once.
+        if fan.writeError != nil { return L10n.t("настройка не применилась", "the setting did not take") }
         if let temp = fan.drivingTemp, fan.mode == .curve {
             return L10n.t("ведёт \(Format.temperature(temp))", "driven by \(Format.temperature(temp))")
         }

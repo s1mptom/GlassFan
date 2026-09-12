@@ -45,6 +45,7 @@ struct FansView: View {
         let isSelected = item.index == (fan?.index ?? -1)
         return HStack(spacing: 14) {
             FanDial(rpm: item.actualRPM, limits: item.limits, controlled: item.forced,
+                    alert: item.emergency || item.writeError != nil,
                     size: 58, showsCaption: false, showsValue: false)
             VStack(alignment: .leading, spacing: 1) {
                 Text(L10n.t("Вентилятор \(item.index + 1)", "Fan \(item.index + 1)"))
@@ -56,7 +57,8 @@ struct FansView: View {
                     .foregroundStyle(item.forced ? Palette.ink : Palette.ink.opacity(0.86))
                 Text(modeCaption(item))
                     .font(.system(size: 10.5))
-                    .foregroundStyle(item.forced ? Palette.calm : Palette.ink.opacity(0.4))
+                    .foregroundStyle(item.writeError != nil ? Palette.critical
+                                     : item.forced ? Palette.calm : Palette.ink.opacity(0.4))
             }
             Spacer(minLength: 0)
         }

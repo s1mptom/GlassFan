@@ -45,6 +45,9 @@ struct FanDial: View {
     let rpm: Double
     let limits: FanLimits
     let controlled: Bool
+    /// The fan is in trouble - running away on the emergency rule, or refusing the
+    /// writes sent to it. Either way the gauge should not look like business as usual.
+    var alert = false
     var size: CGFloat = 132
     var showsCaption = true
     /// At sidebar size the reading is already spelled out next to the dial, and a
@@ -66,7 +69,8 @@ struct FanDial: View {
     }
 
     private var arcStyle: AnyShapeStyle {
-        controlled
+        if alert { return AnyShapeStyle(Palette.critical) }
+        return controlled
             ? AnyShapeStyle(AngularGradient(
                 colors: [Palette.calm, Palette.series[2], Palette.calm],
                 center: .center))
@@ -89,7 +93,7 @@ struct FanDial: View {
             TimelineView(.animation) { context in
                 let seconds = context.date.timeIntervalSinceReferenceDate
                 FanBlades()
-                    .fill(controlled ? Palette.blade : Palette.ink)
+                    .fill(alert ? Palette.critical : (controlled ? Palette.blade : Palette.ink))
                     .opacity(rpm < 60 ? 0.07 : 0.16)
                     .frame(width: size, height: size)
                     .rotationEffect(.degrees(seconds * spinRate))
@@ -114,9 +118,11 @@ struct FanDial: View {
         // An arc, four turning blades and a number say nothing to VoiceOver on their
         // own, so the dial speaks as one control instead of as its parts.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(controlled
-                            ? L10n.t("Вентилятор под управлением", "Fan under control")
-                            : L10n.t("Вентилятор", "Fan"))
+        .accessibilityLabel(alert
+                            ? L10n.t("Вентилятор, нужно внимание", "Fan, needs attention")
+                            : controlled
+                              ? L10n.t("Вентилятор под управлением", "Fan under control")
+                              : L10n.t("Вентилятор", "Fan"))
         .accessibilityValue(L10n.t("\(Format.rpm(rpm)) оборотов в минуту",
                                    "\(Format.rpm(rpm)) rpm"))
     }
