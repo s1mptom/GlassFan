@@ -73,9 +73,12 @@ func render(size: Int) -> Data? {
 
     // The pane: a lighter slab of glass inset from the tile, with a rim that
     // catches light at the top and a sheen across its upper half.
-    let paneInset = tile.width * 0.07
+    // The pane is the whole tile: the icon is a piece of glass with the desktop
+    // behind it, not a piece of glass sitting on a tile. Inset by a hair so the
+    // rim stroke stays inside the icon's own edge.
+    let paneInset = max(side * 0.004, 1)
     let pane = tile.insetBy(dx: paneInset, dy: paneInset)
-    let paneCorner = pane.width * 0.24
+    let paneCorner = corner - paneInset
     let paneShape = CGPath(roundedRect: pane, cornerWidth: paneCorner, cornerHeight: paneCorner, transform: nil)
     cx.saveGState()
     cx.addPath(paneShape); cx.clip()
@@ -101,12 +104,12 @@ func render(size: Int) -> Data? {
 
     // The disc: the air first - the blades swollen wide and blurred, at low
     // strength - then the five crisp blades over it. As large as the pane will
-    // hold: the tips reach 0.46 of the pane's width from its centre, just
+    // hold: the tips reach about 0.49 of the pane's width from its centre, just
     // inside the glass, so the star is big at Dock size and still sits on the
     // pane rather than over its edge. One blade points straight up; a
     // five-fold star has no left-right symmetry, and a vertical axis is what
     // makes it read as balanced.
-    let disc = pane.insetBy(dx: -pane.width * 0.16, dy: -pane.height * 0.16)
+    let disc = pane.insetBy(dx: -pane.width * 0.20, dy: -pane.height * 0.20)
     let turn: CGFloat = .pi
     cx.saveGState()
     cx.addPath(paneShape); cx.clip()
