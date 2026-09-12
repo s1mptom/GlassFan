@@ -2,51 +2,13 @@ import SwiftUI
 import AppKit
 import FanKit
 
-/// The blades, as a ring of narrow petals around a hub.
-///
-/// `spread` fattens each petal without moving its tip or its root. At 1 it is the
-/// blade as drawn; wound up, neighbouring petals swell until they meet. That is
-/// how the moving air is drawn - see `FanDial.wash` for why it is done with one
-/// widening shape rather than a stack of copies.
+/// The blades and hub, from `FanGeometry`: six swept crescents, tips at 0.35 of
+/// the frame's side - where the dial's blades have always reached.
 struct FanBlades: Shape {
-    var count: Int = 5
-    var spread: Double = 1
-
-    /// So a change of speed widens the petals over time instead of snapping them.
-    var animatableData: Double {
-        get { spread }
-        set { spread = newValue }
-    }
-
     func path(in rect: CGRect) -> Path {
-        let blades = max(count, 2)
         let side = min(rect.width, rect.height)
-        let origin = CGPoint(x: rect.midX - side / 2, y: rect.midY - side / 2)
-        func point(_ x: Double, _ y: Double) -> CGPoint {
-            CGPoint(x: origin.x + x * side, y: origin.y + y * side)
-        }
-
-        let half = 0.076 * max(spread, 0.01)
-
-        var blade = Path()
-        blade.move(to: point(0.5, 0.5))
-        blade.addCurve(to: point(0.5, 0.1515),
-                       control1: point(0.5, 0.303),
-                       control2: point(0.5 - half, 0.197))
-        blade.addCurve(to: point(0.5, 0.5),
-                       control1: point(0.5 + half, 0.197),
-                       control2: point(0.5, 0.303))
-        blade.closeSubpath()
-
-        var combined = Path()
-        let centre = CGPoint(x: rect.midX, y: rect.midY)
-        for index in 0..<blades {
-            let rotation = CGAffineTransform(translationX: centre.x, y: centre.y)
-                .rotated(by: Double(index) * 2 * .pi / Double(blades))
-                .translatedBy(x: -centre.x, y: -centre.y)
-            combined.addPath(blade, transform: rotation)
-        }
-        return combined
+        return Path(FanGeometry.path(centre: CGPoint(x: rect.midX, y: rect.midY),
+                                     radius: side * 0.3485))
     }
 }
 
@@ -65,7 +27,6 @@ struct FanDial: View {
     /// second copy inside it just crowds the blades.
     var showsValue = true
 
-    private static let bladeCount = 5
     /// The disc runs at one of ten speeds rather than at a speed computed from the
     /// reading.
     ///
@@ -210,7 +171,7 @@ struct FanDial: View {
             .frame(width: size, height: size)
             .task(id: discKey) {
                 let renderer = ImageRenderer(content:
-                    TurningDisc(size: size, blades: Self.bladeCount, spread: blurred,
+                    TurningDisc(size: size, spread: blurred,
                                 tint: bladeColor, ink: bladeOpacity)
                         .environment(\.colorScheme, scheme))
                 renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
@@ -246,28 +207,45 @@ struct FanDial: View {
     }
 }
 
-/// The blades and the air they drag. Never on screen as a view: `FanDial`
+/// The blades and the wake they drag. Never on screen as a view: `FanDial`
 /// renders it to a bitmap and hands the bitmap to `SpinningDisc`.
 private struct TurningDisc: View {
     let size: CGFloat
-    let blades: Int
-    /// How far from "separate petals" towards "a turning disc", 0 to 1.
+    /// How far towards full speed, 0 to 1.
     let spread: Double
     let tint: Color
     let ink: Double
 
     var body: some View {
         ZStack {
-            AirSweep(size: size, blades: blades, tint: tint)
-                .opacity(ink * 1.15 * spread)
-                // The air lags a little behind the blade that threw it.
-                .rotationEffect(.degrees(-spread * (360 / Double(blades)) * 0.22))
-            FanBlades(count: blades, spread: 1 + 0.9 * spread)
-                .fill(tint)
-                // A fan at full tilt shows no distinct blade, so the crisp set
-                // recedes as the air takes over, leaving a hint of structure.
-                .opacity(ink * (1 - 0.3 * spread))
+            // Behind each blade only - see `FanGeometry.wake`.
+            ZStack {
+                ForEach(Array(FanGeometry.wake(spread: spread).enumerated()), id: \.offset) { _, ghost in
+                    FanBlades()
+                        .fill(tint)
+                        .opacity(ghost.opacity)
+                        .rotationEffect(.radians(ghost.angle))
+                }
+            }
+            .blur(radius: size * 0.005)
+            // Every copy converges on the hub; faded there, or they collect into a
+            // bright ring just outside it.
+            .mask(
+                RadialGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .clear, location: 0.17),
+                        .init(color: .white, location: 0.24),
+                        .init(color: .white, location: 1),
+                    ],
+                    center: .center, startRadius: 0, endRadius: size / 2)
+            )
+            FanBlades().fill(tint)
         }
+        // One layer, faded as a whole: the crisp blades cover their own wake
+        // where they overlap it, as solid blades would.
+        .compositingGroup()
+        .opacity(ink)
         .frame(width: size, height: size)
     }
 }
@@ -441,56 +419,5 @@ private struct ArcLayer: NSViewRepresentable {
             state.mask.strokeEnd = fraction
             CATransaction.commit()
         }
-    }
-}
-
-/// The air the blades drag with them: one soft lobe per blade.
-///
-/// An angular gradient, not copies of the blade. Copies were tried twice - at any
-/// useful spacing they read as a row of separate smudges, and closing that
-/// spacing takes enough of them that the hub collects a bright blot where they
-/// all converge. A gradient has nothing to band: it is smooth by construction and
-/// spreads evenly into the gap between blades, which is the whole point of it.
-///
-/// Drawn at full strength. Whoever uses it fades it to the speed.
-private struct AirSweep: View {
-    let size: CGFloat
-    let blades: Int
-    let tint: Color
-
-    var body: some View {
-        Circle()
-            .fill(AngularGradient(stops: stops, center: .center))
-            // The air lives where the blades sweep and nowhere else. The petals
-            // reach 0.70 of the dial's radius, so past that the glow would be a
-            // halo around the gauge rather than air inside it.
-            .mask(
-                RadialGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .clear, location: 0.18),
-                        .init(color: .white, location: 0.40),
-                        .init(color: .white, location: 0.62),
-                        .init(color: .clear, location: 0.76),
-                    ],
-                    center: .center, startRadius: 0, endRadius: size / 2)
-            )
-            .blur(radius: size * 0.018)
-            .frame(width: size, height: size)
-    }
-
-    /// Clear at each blade line, solid halfway between: the lobes land in the
-    /// gaps. Both ends of every ramp are explicit, so the sweep closes on itself
-    /// without a seam.
-    private var stops: [Gradient.Stop] {
-        var stops: [Gradient.Stop] = []
-        for lobe in 0...blades {
-            let base = Double(lobe) / Double(blades)
-            stops.append(.init(color: tint.opacity(0), location: base))
-            if lobe < blades {
-                stops.append(.init(color: tint, location: base + 0.5 / Double(blades)))
-            }
-        }
-        return stops
     }
 }

@@ -123,6 +123,21 @@ private struct PreviewShell: View {
     .background(Color(white: 0.08))
 }
 
+/// The disc travels to the screen as a bitmap on a Core Animation layer; the
+/// shape beside it is drawn by SwiftUI directly. The blades are chiral - swept
+/// back against the spin - so a layer that flipped its contents would show
+/// here as the two curling opposite ways.
+#Preview("Blade orientation") {
+    HStack(spacing: 30) {
+        FanDial(rpm: 0, limits: FanLimits(minRPM: 1499, maxRPM: 5348), controlled: false,
+                size: 300, showsCaption: false, showsValue: false)
+        FanBlades().fill(Color.white.opacity(0.5)).frame(width: 300, height: 300)
+    }
+    .padding(20)
+    .background(Color(white: 0.06))
+    .preferredColorScheme(.dark)
+}
+
 #Preview("Menu bar") {
     MenuBarPanel()
         .environment(DaemonClient.demo())
