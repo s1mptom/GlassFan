@@ -117,13 +117,14 @@ struct ScreenCommands: View {
 
 struct MainWindow: View {
     @Environment(DaemonClient.self) private var client
-    @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
+    /// Only the tone is needed here: the frosting is lightness-neutral, so it
+    /// cannot change which way the ink has to go.
     @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
     /// Remembered between launches, so the app reopens where it was left.
     @AppStorage(Screen.storageKey) private var screen: Screen = .overview
 
     private var scheme: ColorScheme {
-        GlassStyle.isLight(frost: frost, tint: tint) ? .light : .dark
+        GlassStyle.isLight(tint: tint) ? .light : .dark
     }
 
     var body: some View {
@@ -153,6 +154,12 @@ struct MainWindow: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The outgoing screen used to vanish on the same frame the selector
+            // started moving. It fades instead, so the selector's glide and the
+            // change of content read as one movement. Short: the incoming screen
+            // has its own entrance to get on with.
+            .id(screen)
+            .transition(.opacity.animation(.easeInOut(duration: 0.16)))
         }
     }
 

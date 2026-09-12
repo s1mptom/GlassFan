@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import FanKit
 
 /// The blades, as a ring of narrow petals around a hub.
@@ -144,12 +145,20 @@ struct FanDial: View {
         rpm <= 0 ? 0.07 : 0.16
     }
 
+    /// Linear, not angular.
+    ///
+    /// An `AngularGradient` shades per pixel through `atan2`, and the spinning
+    /// blades make the whole window's backing store redraw every frame, so
+    /// everything drawn beside them - this arc included - was being re-shaded
+    /// sixty times a second. A profile put the conic shader at about a third of
+    /// all main-thread work. Across a three-quarter arc a diagonal sweep is
+    /// indistinguishable from a radial one, and it costs an interpolation.
     private var arcStyle: AnyShapeStyle {
         if alert { return AnyShapeStyle(Palette.critical) }
         return controlled
-            ? AnyShapeStyle(AngularGradient(
-                colors: [Palette.calm, Palette.series[2], Palette.calm],
-                center: .center))
+            ? AnyShapeStyle(LinearGradient(
+                colors: [Palette.calm, Palette.series[2]],
+                startPoint: .bottomLeading, endPoint: .topTrailing))
             : AnyShapeStyle(Palette.ink.opacity(0.42))
     }
 
@@ -248,11 +257,9 @@ struct FanDial: View {
 ///
 /// Split out and made `Equatable` so the frame loop cannot force it to redraw.
 /// It lives inside a `TimelineView`, whose closure runs on every frame, and
-/// building the angular gradient, its stops and the radial mask sixty times a
-/// second for each dial on screen was the single most expensive thing the app
-/// did. None of it depends on the clock - only the rotation does, and that is
-/// applied outside. Now it is rebuilt when the speed step changes, ten times
-/// across the fan's whole range.
+/// rebuilding the gradients and their stops sixty times a second for each dial
+/// on screen is work that nothing asked for: only the rotation depends on the
+/// clock, and that is applied outside.
 private struct TurningDisc: View, Equatable {
     let size: CGFloat
     let blades: Int
@@ -261,9 +268,20 @@ private struct TurningDisc: View, Equatable {
     let tint: Color
     let ink: Double
 
+    @Environment(\.colorScheme) private var scheme
+    @State private var airTexture: Image?
+
     static func == (a: TurningDisc, b: TurningDisc) -> Bool {
         a.size == b.size && a.blades == b.blades && a.tint == b.tint
             && abs(a.spread - b.spread) < 0.0001 && abs(a.ink - b.ink) < 0.0001
+    }
+
+    /// What the air texture depends on. Notably not the speed: the sweep's shape
+    /// is the same at every rpm, and only how strongly it shows through changes.
+    private struct AirKey: Equatable {
+        let size: CGFloat
+        let blades: Int
+        let scheme: ColorScheme
     }
 
     var body: some View {
@@ -276,22 +294,58 @@ private struct TurningDisc: View, Equatable {
                 .opacity(ink * (1 - 0.3 * spread))
         }
         .frame(width: size, height: size)
-        // Flattened to one texture so the frame loop transforms a bitmap rather
-        // than re-running a blur and two gradient fills through the compositor on
-        // every frame of every dial on screen.
-        .drawingGroup()
+        .task(id: AirKey(size: size, blades: blades, scheme: scheme)) {
+            airTexture = Self.renderAir(size: size, blades: blades, tint: tint, scheme: scheme)
+        }
     }
 
-    /// The air the blades drag with them: one soft lobe per blade, sweeping round
-    /// a little behind them.
+    /// The air, as a bitmap.
     ///
-    /// An angular gradient, not copies of the blade. Copies were tried twice - at
-    /// any useful spacing they read as a row of separate smudges, and closing that
-    /// spacing takes enough of them that the hub collects a bright blot where they
-    /// all converge. A gradient has nothing to band: it is smooth by construction,
-    /// costs one fill, and spreads evenly into the gap between blades, which is
-    /// the whole point of drawing it.
+    /// A profile of the running app put `rgba64_shade_conic_RGB` and the `atan2f`
+    /// under it at about a third of everything the main thread did - the angular
+    /// gradient was being shaded per pixel on the CPU on every frame of every
+    /// dial, and `drawingGroup()` did not cache it. The sweep is identical at
+    /// every speed, though: `spread` only decides how strongly it shows. So it is
+    /// drawn once, and each frame merely turns and fades a picture.
     private var air: some View {
+        Group {
+            if let airTexture {
+                airTexture.opacity(ink * 1.15 * spread)
+            }
+        }
+    }
+
+    /// The air lags a little behind the blade that threw it.
+    private var lag: Double {
+        spread * (360 / Double(blades)) * 0.22
+    }
+
+    @MainActor
+    private static func renderAir(size: CGFloat, blades: Int,
+                                  tint: Color, scheme: ColorScheme) -> Image? {
+        let renderer = ImageRenderer(content: AirSweep(size: size, blades: blades, tint: tint)
+            .environment(\.colorScheme, scheme))
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        guard let rendered = renderer.cgImage else { return nil }
+        return Image(decorative: rendered, scale: renderer.scale)
+    }
+}
+
+/// The air the blades drag with them: one soft lobe per blade.
+///
+/// An angular gradient, not copies of the blade. Copies were tried twice - at any
+/// useful spacing they read as a row of separate smudges, and closing that
+/// spacing takes enough of them that the hub collects a bright blot where they
+/// all converge. A gradient has nothing to band: it is smooth by construction and
+/// spreads evenly into the gap between blades, which is the whole point of it.
+///
+/// Drawn at full strength. Whoever uses it fades it to the speed.
+private struct AirSweep: View {
+    let size: CGFloat
+    let blades: Int
+    let tint: Color
+
+    var body: some View {
         Circle()
             .fill(AngularGradient(stops: stops, center: .center))
             // The air lives where the blades sweep and nowhere else. The petals
@@ -308,8 +362,8 @@ private struct TurningDisc: View, Equatable {
                     ],
                     center: .center, startRadius: 0, endRadius: size / 2)
             )
-            .opacity(ink * 1.15 * spread)
             .blur(radius: size * 0.018)
+            .frame(width: size, height: size)
     }
 
     /// Clear at each blade line, solid halfway between: the lobes land in the
@@ -325,10 +379,5 @@ private struct TurningDisc: View, Equatable {
             }
         }
         return stops
-    }
-
-    /// The air lags a little behind the blade that threw it.
-    private var lag: Double {
-        spread * (360 / Double(blades)) * 0.22
     }
 }

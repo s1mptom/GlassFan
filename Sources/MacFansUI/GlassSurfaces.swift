@@ -18,34 +18,78 @@ enum GlassStyle {
     static let frostRange: ClosedRange<Double> = 0...1
     static let tintRange: ClosedRange<Double> = -1...1
 
-    /// The veil laid over the blur: tone picks its lightness, frost its density.
-    static func scrim(frost: Double, tint: Double) -> Color {
-        Color(white: scrimLevel(tint)).opacity(scrimAlpha(frost))
+    /// Two veils, not one.
+    ///
+    /// A single veil had to carry both dials: its opacity was the frosting and its
+    /// lightness was the tone. That couples them, and both symptoms were reported.
+    /// At a Frost of zero there is no veil, so nothing for a tone to colour and the
+    /// Tone dial does nothing whatever; and once Tone is off centre, moving Frost
+    /// changes the lightness too, because it changes how much of a tinted veil is
+    /// laid down. Measured over the old code, the whole Tone range at Frost 0.2
+    /// moved the backing from 0.08 to 0.25, against 0.01 to 0.86 at Frost 1.
+    ///
+    /// Separated, each dial does exactly the one thing its label claims.
+
+    /// The frosting: a veil the same lightness as the material beneath it, so
+    /// laying more of it down hides more of the desktop without shifting the tone.
+    /// Adaptive, because the material follows the appearance and a fixed dark veil
+    /// would darken a light one.
+    static func frostVeil(_ frost: Double) -> Color {
+        materialMatch.opacity(frostOpacity(frost))
     }
 
-    /// Asymmetric on purpose. Darkening only has to reach black, which is a short
-    /// trip from the material's own lightness; lightening has to travel all the way
-    /// to white, and a gentler slope stranded the whole upper half of the dial in
-    /// mid-grey - the one backing no ink reads well on.
-    private static func scrimLevel(_ tint: Double) -> Double {
-        let level = tint >= 0 ? 0.12 + tint * 0.84 : 0.12 + tint * 0.45
-        return min(max(level, 0), 1)
+    /// The tone: black or white over the top. It applies whatever the frosting is,
+    /// which is the whole point of separating the two.
+    static func toneVeil(_ tint: Double) -> Color {
+        Color(white: toneIsWhite(tint) ? 1 : 0).opacity(toneOpacity(tint))
     }
 
-    private static func scrimAlpha(_ frost: Double) -> Double {
-        min(max(frost, 0), 1) * 0.88
+    // The arithmetic behind the veils, kept as plain numbers so it can be tested
+    // without resolving a Color. Resolving an adaptive colour reaches into AppKit,
+    // and doing that from a test running off the main actor deadlocked the runner.
+
+    /// How much of the frost veil is laid down. Never fully opaque: some of the
+    /// desktop always shows, or it is not glass.
+    static func frostOpacity(_ frost: Double) -> Double {
+        min(max(frost, 0), 1) * 0.92
+    }
+
+    static func toneOpacity(_ tint: Double) -> Double {
+        abs(min(max(tint, -1), 1)) * toneAuthority
+    }
+
+    static func toneIsWhite(_ tint: Double) -> Bool {
+        tint >= 0
+    }
+
+    /// How much of the window the tone veil may claim at the ends of its travel.
+    /// High enough that the light end is genuinely light rather than the mid-grey
+    /// no ink reads well on.
+    static let toneAuthority = 0.85
+
+    /// Apparent lightness of the material itself, and a veil matching it. The
+    /// level is what makes the frost veil lightness-neutral, so it is not private:
+    /// a test checks that the veil's colour really does sit at it.
+    static let materialLevel = 0.1
+    private static let materialMatch = Color.adaptive(light: "#e6e8ec", dark: "#191c21")
+
+    /// What the backing ends up looking like, 0 black to 1 white.
+    ///
+    /// Only the tone moves it: the frost veil matches the material, so it is
+    /// lightness-neutral by construction and does not appear here at all. That is
+    /// the property the two tests assert.
+    static func apparentLightness(tint: Double) -> Double {
+        let tint = min(max(tint, -1), 1)
+        let alpha = abs(tint) * toneAuthority
+        return (tint >= 0 ? 1 : 0) * alpha + materialLevel * (1 - alpha)
     }
 
     /// Whether the backing has been dialled light enough that white text would sink
-    /// into it. Both dials matter: a light veil that is barely there still leaves a
-    /// dark window, so lightness is weighed by how much of it is actually laid down.
-    ///
-    /// The material underneath is the dark one, hence the 0.1 floor the veil is mixed
-    /// over. A clear pane therefore counts as dark, which is the right call: with no
-    /// veil the desktop shows through and light ink would depend on the wallpaper.
-    static func isLight(frost: Double, tint: Double) -> Bool {
-        let alpha = scrimAlpha(frost)
-        return scrimLevel(tint) * alpha + 0.1 * (1 - alpha) > 0.5
+    /// into it, in which case `Palette.ink` flips to dark. A function of the tone
+    /// alone now, so the ink flips at the same place on the dial whatever the
+    /// frosting - it used to depend on both and move about.
+    static func isLight(tint: Double) -> Bool {
+        apparentLightness(tint: tint) > 0.5
     }
 }
 
@@ -77,7 +121,8 @@ struct GlassBackground: View {
     var body: some View {
         ZStack {
             VisualEffectBackground()
-            Rectangle().fill(GlassStyle.scrim(frost: frost, tint: tint))
+            Rectangle().fill(GlassStyle.frostVeil(frost))
+            Rectangle().fill(GlassStyle.toneVeil(tint))
         }
         .ignoresSafeArea()
     }

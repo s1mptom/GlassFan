@@ -82,6 +82,47 @@ private struct PreviewShell: View {
     .preferredColorScheme(.dark)
 }
 
+/// The two glass dials, crossed: Frost down the page, Tone across it, over a
+/// stand-in for the desktop so the frosting has something to hide. The real
+/// window cannot show this in a preview - there is nothing behind it to blur.
+///
+/// What to check. Every row must change left to right, including the top one:
+/// that is the Tone dial working at a Frost of zero, which it did not. And the
+/// middle column must be the same lightness all the way down: that is the
+/// frosting hiding more of the desktop without shifting the tone.
+#Preview("Glass dials") {
+    let frosts: [Double] = [0, 0.35, 0.7, 1]
+    let tones: [Double] = [-1, -0.5, 0, 0.5, 1]
+
+    return VStack(spacing: 5) {
+        ForEach(frosts, id: \.self) { frost in
+            HStack(spacing: 5) {
+                ForEach(tones, id: \.self) { tone in
+                    ZStack {
+                        LinearGradient(colors: [.purple, .blue, .teal],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Rectangle().fill(GlassStyle.frostVeil(frost))
+                        Rectangle().fill(GlassStyle.toneVeil(tone))
+                        VStack(spacing: 1) {
+                            Text("2600")
+                                .font(.system(size: 17, weight: .semibold))
+                                .monospacedDigit()
+                            Text("frost \(Int(frost * 100)) · tone \(Int(tone * 100))")
+                                .font(.system(size: 8))
+                                .foregroundStyle(Palette.ink.opacity(0.55))
+                        }
+                        .foregroundStyle(Palette.ink)
+                    }
+                    .environment(\.colorScheme, GlassStyle.isLight(tint: tone) ? .light : .dark)
+                    .frame(width: 132, height: 66)
+                }
+            }
+        }
+    }
+    .padding(12)
+    .background(Color(white: 0.08))
+}
+
 #Preview("Menu bar") {
     MenuBarPanel()
         .environment(DaemonClient.demo())

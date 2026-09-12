@@ -72,15 +72,14 @@ struct FansView: View {
                                                       : (hoveredFan == item.index ? 0.12 : 0.07)),
                                   lineWidth: 0.5))
         )
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: fan?.index)
         .contentShape(Rectangle())
         .onHover { inside in
             withAnimation(.easeOut(duration: 0.12)) {
                 hoveredFan = inside ? item.index : (hoveredFan == item.index ? nil : hoveredFan)
             }
         }
-        .onTapGesture {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selected = item.index }
-        }
+        .onTapGesture { selected = item.index }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -178,6 +177,9 @@ struct FansView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The selector slides and the panel under it used to cut. A short
+            // cross-fade ties the two halves of the same gesture together.
+            .animation(.easeInOut(duration: 0.2), value: settingsBinding.wrappedValue.mode)
 
             HStack(spacing: 26) {
                 LabelledSlider(

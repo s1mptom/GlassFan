@@ -45,16 +45,17 @@ struct GlassSegmented<Value: Hashable>: View {
                         }
                     }
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) {
-                            selection = item.value
-                        }
-                    }
+                    .onTapGesture { selection = item.value }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(item.title)
                     .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             }
         }
+        // The glide belongs to the value, not to the tap that happened to cause
+        // it. Wrapping the gesture in `withAnimation` animated only clicks, so
+        // Command-1..4 and the menu bar's mode switch teleported the selection
+        // instead of sliding it.
+        .animation(.spring(response: 0.34, dampingFraction: 0.8), value: selection)
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -157,7 +158,11 @@ struct RiseIn: ViewModifier {
             .offset(y: shown ? 0 : 14)
             .onAppear {
                 guard !Runtime.isPreview else { return }
-                withAnimation(.spring(response: 0.7, dampingFraction: 0.85).delay(delay)) {
+                // Brisk on purpose. This runs again every time a screen is
+                // switched to, and a 0.7s spring delayed behind its neighbours
+                // took most of a second to settle - charming once, tiresome by
+                // the fourth tab press.
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.88).delay(delay)) {
                     shown = true
                 }
             }
