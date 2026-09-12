@@ -42,24 +42,10 @@ struct OverviewView: View {
     private static let sampleLimit = 180
 
     private var samples: [HistorySample] {
-        let cutoff = Date().timeIntervalSince1970 - Double(window.rawValue)
-        return Self.downsample(client.history.filter { $0.t >= cutoff }, to: Self.sampleLimit)
-    }
-
-    /// A little air above and below the data, never anchored at zero: room temperature
-    /// is not a meaningful floor for a temperature chart.
-    static func domain(for points: [SeriesPoint]) -> ClosedRange<Double>? {
-        guard let low = points.map(\.value).min(), let high = points.map(\.value).max()
-        else { return nil }
-        let padding = max((high - low) * 0.12, 2)
-        return (low - padding)...(high + padding)
-    }
-
-    /// Swift Charts slows to a crawl on thousands of marks; the eye cannot use them either.
-    static func downsample(_ samples: [HistorySample], to limit: Int) -> [HistorySample] {
-        guard samples.count > limit, limit > 0 else { return samples }
-        let stride = Int((Double(samples.count) / Double(limit)).rounded(.up))
-        return samples.enumerated().compactMap { $0.offset % stride == 0 ? $0.element : nil }
+        ChartSampling.bucketed(client.history,
+                               window: Double(window.rawValue),
+                               now: Date().timeIntervalSince1970,
+                               limit: Self.sampleLimit)
     }
 
     var body: some View {
@@ -249,7 +235,7 @@ struct OverviewView: View {
                 DataHint()
             } else {
                 TimeChart(points: points, order: names, unit: "°C",
-                          yDomain: Self.domain(for: points), areaUnderFirst: true) {
+                          yDomain: ChartSampling.domain(for: points.map(\.value)), areaUnderFirst: true) {
                     String(format: "%.0f°", $0)
                 }
                 ChartLegend(names: names,
