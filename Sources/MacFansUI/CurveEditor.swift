@@ -151,7 +151,15 @@ struct CurveEditor: View {
     private func liveMarker(in plot: CGRect) -> some View {
         Group {
             if let currentTemp, let currentRPM {
-                let marker = position(CurvePoint(temperature: currentTemp, rpm: currentRPM), in: plot)
+                // Kept inside the plot. The plot's floor is the fan's SMC minimum,
+                // but on Apple silicon a fan at rest reads 0 rpm - below that
+                // floor - and the marker flew off the bottom of the editor. It
+                // sits on the floor line instead, and the label says what the
+                // fan is really doing.
+                let raw = position(CurvePoint(temperature: currentTemp, rpm: currentRPM), in: plot)
+                let marker = CGPoint(x: min(max(raw.x, plot.minX), plot.maxX),
+                                     y: min(max(raw.y, plot.minY), plot.maxY))
+                let nearFloor = marker.y > plot.maxY - 22
                 Circle()
                     .fill(Palette.heat)
                     .frame(width: 11, height: 11)
@@ -181,7 +189,8 @@ struct CurveEditor: View {
                                                             lineWidth: 0.5))
                     )
                     .position(x: min(marker.x + 52, plot.maxX - 46),
-                              y: min(max(marker.y, plot.minY + 12), plot.maxY - 12))
+                              y: nearFloor ? marker.y - 20
+                                           : min(max(marker.y, plot.minY + 12), plot.maxY - 12))
                     .animation(.easeInOut(duration: 0.8), value: currentTemp)
             }
         }
