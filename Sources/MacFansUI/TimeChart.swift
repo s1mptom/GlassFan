@@ -153,6 +153,12 @@ struct TimeChart: View {
             if let hoverDate, let readout = readout(at: hoverDate) {
                 ChartTooltip(date: hoverDate, entries: readout, format: valueFormat)
                     .padding(6)
+                    // The readout sits above the layer that tracks the pointer.
+                    // If it took the pointer, moving onto it ended the hover,
+                    // which removed it, which put the pointer back on the chart,
+                    // which brought it back - a flicker for as long as the
+                    // cursor sat where the readout wanted to be.
+                    .allowsHitTesting(false)
             }
         }
     }
