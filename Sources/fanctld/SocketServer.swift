@@ -10,8 +10,8 @@ final class SocketServer {
     private var listenFD: Int32 = -1
     private let lock = NSLock()
     private var clients: [Int32] = []
-    private let acceptQueue = DispatchQueue(label: "macfans.accept")
-    private let clientQueue = DispatchQueue(label: "macfans.client", attributes: .concurrent)
+    private let acceptQueue = DispatchQueue(label: "glassfan.accept")
+    private let clientQueue = DispatchQueue(label: "glassfan.client", attributes: .concurrent)
 
     var onCommand: ((ClientCommand) -> Void)?
     var onConnect: ((Int32) -> Void)?

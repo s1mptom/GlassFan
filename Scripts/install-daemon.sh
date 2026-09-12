@@ -7,8 +7,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-LABEL="com.macfans.fanctld"
-DEST="/usr/local/libexec/macfans"
+LABEL="com.glassfan.fanctld"
+DEST="/usr/local/libexec/glassfan"
 PLIST="/Library/LaunchDaemons/${LABEL}.plist"
 MFC_LABEL="com.crystalidea.macsfancontrol.smcwrite"
 
@@ -18,12 +18,28 @@ if pgrep -f "$MFC_LABEL" >/dev/null 2>&1; then
     launchctl bootout system/"$MFC_LABEL" 2>/dev/null || true
 fi
 
+# The app used to be MacFans. Take its daemon down and carry its config over,
+# so an upgrade is not a second daemon fighting the first over the same fans.
+OLD_LABEL="com.macfans.fanctld"
+if [[ -f "/Library/LaunchDaemons/${OLD_LABEL}.plist" ]]; then
+    echo "removing the MacFans daemon"
+    launchctl bootout system/"$OLD_LABEL" 2>/dev/null || true
+    rm -f "/Library/LaunchDaemons/${OLD_LABEL}.plist"
+    rm -rf /usr/local/libexec/macfans
+    rm -f /var/run/macfans.sock
+fi
+if [[ -f "/Library/Application Support/MacFans/config.json" && ! -f "/Library/Application Support/GlassFan/config.json" ]]; then
+    echo "carrying the MacFans config over"
+    mkdir -p "/Library/Application Support/GlassFan"
+    mv "/Library/Application Support/MacFans/config.json" "/Library/Application Support/GlassFan/config.json"
+fi
+
 mkdir -p "$DEST"
 cp "$HERE/fanctld" "$DEST/fanctld"
 chown root:wheel "$DEST/fanctld"
 chmod 755 "$DEST/fanctld"
 
-cp "$HERE/com.macfans.fanctld.plist" "$PLIST"
+cp "$HERE/com.glassfan.fanctld.plist" "$PLIST"
 chown root:wheel "$PLIST"
 chmod 644 "$PLIST"
 

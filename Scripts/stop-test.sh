@@ -11,7 +11,7 @@
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/debug/fanctld"
-PLIST=/Library/LaunchDaemons/com.macfans.fanctld.plist
+PLIST=/Library/LaunchDaemons/com.glassfan.fanctld.plist
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 1; }
 [[ -x "$BIN" ]] || { echo "build first: swift build --product fanctld"; exit 1; }
 
@@ -22,6 +22,6 @@ restore() {
 }
 trap restore EXIT
 
-launchctl bootout system/com.macfans.fanctld 2>/dev/null; sleep 1
+launchctl bootout system/com.glassfan.fanctld 2>/dev/null; sleep 1
 echo "daemon stopped (fanctld running: $(pgrep -x fanctld | tr '\n' ' ')none)"
 "$BIN" "${1:---stop-test}"

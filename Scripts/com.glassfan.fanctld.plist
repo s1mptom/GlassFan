@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.macfans.fanctld</string>
+    <string>com.glassfan.fanctld</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/libexec/macfans/fanctld</string>
+        <string>/usr/local/libexec/glassfan/fanctld</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -15,8 +15,8 @@
     <key>ProcessType</key>
     <string>Interactive</string>
     <key>StandardOutPath</key>
-    <string>/var/log/macfans.log</string>
+    <string>/var/log/glassfan.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/macfans.log</string>
+    <string>/var/log/glassfan.log</string>
 </dict>
 </plist>

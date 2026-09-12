@@ -1,4 +1,4 @@
-# MacFans
+# GlassFan
 
 Fan control and temperature monitoring for Apple Silicon MacBooks, in the spirit of
 Macs Fan Control, built for macOS 26+ with the Liquid Glass design language.
@@ -15,9 +15,9 @@ The privileged part and the interface are separate programs:
 | `CSMC` | Raw SMC access over IOKit. No policy. | — |
 | `FanKit` | Curves, aggregation, config, wire protocol. No I/O, fully unit-tested. | — |
 | `fanctld` | Control loop, safety watchdog, socket server. | root, via launchd |
-| `MacFans` | SwiftUI app: menu bar item and window. | you |
+| `GlassFan` | SwiftUI app: menu bar item and window. | you |
 
-They talk over a unix socket at `/var/run/macfans.sock` in newline-delimited JSON.
+They talk over a unix socket at `/var/run/glassfan.sock` in newline-delimited JSON.
 The app holds no privileges and can be quit or crash at any time; the fans keep being
 managed. The transport is behind one protocol type, so moving to XPC and a signed
 `SMAppService` helper later does not touch the engine.
@@ -41,7 +41,7 @@ Build and run the app:
 
 ```sh
 ./Scripts/build-app.sh
-open MacFans.app
+open GlassFan.app
 ```
 
 Remove everything:
@@ -81,5 +81,5 @@ Checked on a MacBook Pro 18,2 (M1 Max) running macOS 27.0, not assumed:
 swift test                 # FanKit logic, no hardware needed
 ./.build/debug/fanctld --probe     # read-only hardware dump, no root
 sudo fanctld --selftest            # proves a fan responds, then restores auto
-MACFANS_SOCKET=/tmp/macfans-dev.sock fanctld --dev   # unprivileged, for UI work
+GLASSFAN_SOCKET=/tmp/glassfan-dev.sock fanctld --dev   # unprivileged, for UI work
 ```

@@ -1,5 +1,5 @@
 import Testing
-@testable import MacFansUI
+@testable import GlassFanUI
 
 /// The two glass dials were reported as not doing what they say: Tone appeared
 /// inert, and Frost appeared to change the tone. Both were true, because one

@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import FanKit
-@testable import MacFansUI
+@testable import GlassFanUI
 
 /// The chart was reported as jumping every tick - the already-drawn part of
 /// the line, and the scale after it. The thinning picked every Nth sample by

@@ -5,9 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/Scripts/sudo-helper.sh"
-LABEL="com.macfans.fanctld"
+LABEL="com.glassfan.fanctld"
 PLIST="/Library/LaunchDaemons/${LABEL}.plist"
-DEST="/usr/local/libexec/macfans"
+DEST="/usr/local/libexec/glassfan"
 
 if [[ $EUID -eq 0 ]]; then
     echo "Run this as your normal user, not with sudo - it asks for the password itself."
@@ -65,10 +65,10 @@ sleep 2
 if run_root launchctl print system/"$LABEL" >/dev/null 2>&1; then
     echo "Daemon is running."
     echo
-    echo "Socket: $(ls -l /var/run/macfans.sock 2>/dev/null || echo 'not created yet')"
-    echo "Log:    /var/log/macfans.log"
-    tail -n 12 /var/log/macfans.log 2>/dev/null || true
+    echo "Socket: $(ls -l /var/run/glassfan.sock 2>/dev/null || echo 'not created yet')"
+    echo "Log:    /var/log/glassfan.log"
+    tail -n 12 /var/log/glassfan.log 2>/dev/null || true
 else
-    echo "Daemon failed to start. Check /var/log/macfans.log"
+    echo "Daemon failed to start. Check /var/log/glassfan.log"
     exit 1
 fi

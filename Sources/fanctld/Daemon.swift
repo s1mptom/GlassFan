@@ -6,16 +6,16 @@ final class Daemon {
     static let version = "0.1.0"
     /// Overridable so the daemon can be run from a build directory during development,
     /// where /var/run is not writable and fan writes are expected to fail.
-    static var socketPath = ProcessInfo.processInfo.environment["MACFANS_SOCKET"]
-        ?? "/var/run/macfans.sock"
-    static var configPath = ProcessInfo.processInfo.environment["MACFANS_CONFIG"]
-        ?? "/Library/Application Support/MacFans/config.json"
+    static var socketPath = ProcessInfo.processInfo.environment["GLASSFAN_SOCKET"]
+        ?? "/var/run/glassfan.sock"
+    static var configPath = ProcessInfo.processInfo.environment["GLASSFAN_CONFIG"]
+        ?? "/Library/Application Support/GlassFan/config.json"
 
     private let smc: SMCDevice
     private let hardware: FanHardware
     private let server: SocketServer
     private let history = History(capacity: 1800) // 30 min at 1 Hz
-    private let loopQueue = DispatchQueue(label: "macfans.control")
+    private let loopQueue = DispatchQueue(label: "glassfan.control")
     private var timer: DispatchSourceTimer?
     private var watchdog: DispatchSourceTimer?
 
@@ -214,7 +214,7 @@ final class Daemon {
 
     /// If the control loop stops ticking, the fans must not stay pinned where we left them.
     private func startWatchdog() {
-        let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "macfans.watchdog"))
+        let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "glassfan.watchdog"))
         watchdog.schedule(deadline: .now() + 5, repeating: 5)
         watchdog.setEventHandler { [weak self] in
             guard let self else { return }
@@ -252,7 +252,10 @@ final class Daemon {
     // MARK: Config persistence
 
     private static func loadConfig(fanCount: Int) -> AppConfig {
-        guard let data = FileManager.default.contents(atPath: configPath),
+        // A config left where MacFans kept it counts, until the installer moves it.
+        let legacy = "/Library/Application Support/MacFans/config.json"
+        let path = FileManager.default.fileExists(atPath: configPath) ? configPath : legacy
+        guard let data = FileManager.default.contents(atPath: path),
               let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) else {
             Log.info("no saved config, starting in auto")
             return .default(fanCount: fanCount)

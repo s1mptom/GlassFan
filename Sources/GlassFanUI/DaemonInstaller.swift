@@ -26,14 +26,21 @@ final class DaemonInstaller {
 
     private(set) var status: Status = .notInstalled
 
-    static let daemonPath = "/usr/local/libexec/macfans/fanctld"
-    static let plistPath = "/Library/LaunchDaemons/com.macfans.fanctld.plist"
+    static let daemonPath = "/usr/local/libexec/glassfan/fanctld"
+    static let plistPath = "/Library/LaunchDaemons/com.glassfan.fanctld.plist"
 
     func refresh() {
         if case .working = status { return }
         guard FileManager.default.isExecutableFile(atPath: Self.daemonPath),
               FileManager.default.fileExists(atPath: Self.plistPath)
-        else { status = .notInstalled; return }
+        else {
+            // The daemon from the app's MacFans days: installed, running, and not
+            // ours any more. Update replaces it and carries its config over.
+            let macFansEra = FileManager.default.fileExists(
+                atPath: "/Library/LaunchDaemons/com.macfans.fanctld.plist")
+            status = macFansEra ? .outdated : .notInstalled
+            return
+        }
         status = Self.installedMatchesBundle() ? .installed : .outdated
     }
 

@@ -52,7 +52,7 @@ struct MenuBarPanel: View {
 
     private var header: some View {
         HStack {
-            Text("MacFans").font(.system(size: 14, weight: .semibold))
+            Text("GlassFan").font(.system(size: 14, weight: .semibold))
             Spacer()
             HStack(spacing: 6) {
                 LiveDot(active: client.isConnected)

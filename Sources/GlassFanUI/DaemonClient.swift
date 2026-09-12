@@ -9,8 +9,8 @@ import FanKit
 @MainActor
 @Observable
 final class DaemonClient {
-    static let socketPath = ProcessInfo.processInfo.environment["MACFANS_SOCKET"]
-        ?? "/var/run/macfans.sock"
+    static let socketPath = ProcessInfo.processInfo.environment["GLASSFAN_SOCKET"]
+        ?? "/var/run/glassfan.sock"
 
     /// The snapshot and the history it extends, as one value.
     ///
@@ -99,7 +99,7 @@ final class DaemonClient {
         send(.hello)
 
         let thread = Thread { [weak self] in self?.readLoop(socketFD) }
-        thread.name = "macfans.reader"
+        thread.name = "glassfan.reader"
         thread.start()
         readerThread = thread
     }

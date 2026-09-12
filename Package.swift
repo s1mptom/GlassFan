@@ -2,13 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "MacFans",
+    name: "GlassFan",
     platforms: [.macOS("26.0")],
     products: [
         // Declared as a product so Xcode generates a scheme for it, which is what
         // lets the interface previews build without dragging the executable in.
-        .library(name: "MacFansUI", targets: ["MacFansUI"]),
-        .executable(name: "MacFans", targets: ["MacFans"]),
+        .library(name: "GlassFanUI", targets: ["GlassFanUI"]),
+        .executable(name: "GlassFan", targets: ["GlassFan"]),
         .executable(name: "fanctld", targets: ["fanctld"]),
     ],
     targets: [
@@ -24,16 +24,16 @@ let package = Package(
 
         // The interface. A library rather than part of the executable, because Xcode
         // will not render SwiftUI previews inside an executable target.
-        .target(name: "MacFansUI", dependencies: ["FanKit"],
+        .target(name: "GlassFanUI", dependencies: ["FanKit"],
                 swiftSettings: [.swiftLanguageMode(.v5)]),
 
         // Unprivileged SwiftUI app: an entry point and nothing else.
-        .executableTarget(name: "MacFans", dependencies: ["MacFansUI"],
+        .executableTarget(name: "GlassFan", dependencies: ["GlassFanUI"],
                           swiftSettings: [.swiftLanguageMode(.v5)]),
 
         .testTarget(name: "FanKitTests", dependencies: ["FanKit"]),
 
-        .testTarget(name: "MacFansUITests", dependencies: ["MacFansUI"],
+        .testTarget(name: "GlassFanUITests", dependencies: ["GlassFanUI"],
                     swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

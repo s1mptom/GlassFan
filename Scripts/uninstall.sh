@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/Scripts/sudo-helper.sh"
-LABEL="com.macfans.fanctld"
+LABEL="com.glassfan.fanctld"
 
 echo "==> Stopping the daemon"
 run_root launchctl bootout system/"$LABEL" 2>/dev/null || true
@@ -11,10 +11,10 @@ sleep 1
 
 echo "==> Removing files"
 run_root rm -f "/Library/LaunchDaemons/${LABEL}.plist"
-run_root rm -rf /usr/local/libexec/macfans
-run_root rm -f /var/run/macfans.sock
+run_root rm -rf /usr/local/libexec/glassfan
+run_root rm -f /var/run/glassfan.sock
 
 echo "==> Making sure the fans are back under system control"
-echo "    (config is left at /Library/Application Support/MacFans/config.json;"
+echo "    (config is left at /Library/Application Support/GlassFan/config.json;"
 echo "     delete it by hand if you want a clean slate)"
 echo "Done."

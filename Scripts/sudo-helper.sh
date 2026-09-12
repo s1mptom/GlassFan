@@ -12,11 +12,11 @@ _cleanup_askpass() {
 trap _cleanup_askpass EXIT
 
 _make_askpass() {
-    _askpass_file="$(mktemp -t macfans-askpass)"
+    _askpass_file="$(mktemp -t glassfan-askpass)"
     cat > "$_askpass_file" <<'ASKPASS'
 #!/bin/bash
 osascript \
-    -e 'display dialog "MacFans needs administrator rights to control the fans." with title "MacFans" default answer "" with hidden answer buttons {"Cancel", "OK"} default button "OK"' \
+    -e 'display dialog "GlassFan needs administrator rights to control the fans." with title "GlassFan" default answer "" with hidden answer buttons {"Cancel", "OK"} default button "OK"' \
     -e 'text returned of result' 2>/dev/null
 ASKPASS
     chmod 700 "$_askpass_file"

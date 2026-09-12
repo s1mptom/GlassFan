@@ -1,21 +1,37 @@
 import SwiftUI
 import FanKit
 
-public struct MacFansApp: App {
+public struct GlassFanApp: App {
     @State private var client = DaemonClient()
     @State private var installer = DaemonInstaller()
 
     public init() {
+        Self.carryOverMacFansDefaults()
         // Lets a screenshot or a test open straight onto one screen, by seeding the
         // same stored value the window restores from.
-        if let tab = ProcessInfo.processInfo.environment["MACFANS_TAB"],
+        if let tab = ProcessInfo.processInfo.environment["GLASSFAN_TAB"],
            Screen(rawValue: tab) != nil {
             UserDefaults.standard.set(tab, forKey: Screen.storageKey)
         }
     }
 
+    /// The app was MacFans, and its settings live in that bundle's defaults
+    /// domain. Copied once, so the rename does not reset the glass, the chosen
+    /// screen or anything else.
+    private static func carryOverMacFansDefaults() {
+        let defaults = UserDefaults.standard
+        let marker = "carriedOverFromMacFans"
+        guard !defaults.bool(forKey: marker),
+              let old = defaults.persistentDomain(forName: "com.macfans.app")
+        else { return }
+        for (key, value) in old where defaults.object(forKey: key) == nil {
+            defaults.set(value, forKey: key)
+        }
+        defaults.set(true, forKey: marker)
+    }
+
     public var body: some Scene {
-        Window(L10n.t("MacFans", "MacFans"), id: "main") {
+        Window(L10n.t("GlassFan", "GlassFan"), id: "main") {
             MainWindow()
                 .frame(minWidth: 900, minHeight: 600)
                 .environment(client)
@@ -27,7 +43,7 @@ public struct MacFansApp: App {
                     // Measurement hook: what the app costs with its window closed
                     // can only be measured with the window closed, and nothing
                     // in this environment can press the close button.
-                    if let delay = ProcessInfo.processInfo.environment["MACFANS_CLOSE_AFTER"]
+                    if let delay = ProcessInfo.processInfo.environment["GLASSFAN_CLOSE_AFTER"]
                         .flatMap(Double.init) {
                         try? await Task.sleep(for: .seconds(delay))
                         let windows = NSApplication.shared.windows

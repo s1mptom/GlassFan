@@ -2,11 +2,11 @@ import Foundation
 import FanKit
 
 /// Fixed readings matching the design mockup, so the built app can be compared against
-/// it one for one. Screenshot fixture only - switched on with MACFANS_DEMO=1 and never
+/// it one for one. Screenshot fixture only - switched on with GLASSFAN_DEMO=1 and never
 /// reachable otherwise.
 enum DemoFixture {
     static var isEnabled: Bool {
-        ProcessInfo.processInfo.environment["MACFANS_DEMO"] == "1"
+        ProcessInfo.processInfo.environment["GLASSFAN_DEMO"] == "1"
     }
 
     static let limits0 = FanLimits(minRPM: 1499, maxRPM: 5348)
