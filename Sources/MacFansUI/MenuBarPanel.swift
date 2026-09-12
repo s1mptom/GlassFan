@@ -25,13 +25,25 @@ struct MenuBarPanel: View {
                 notRunning
             }
 
+            // The widths go on the labels, not on the buttons: a frame outside a
+            // glass button widens the space it sits in and leaves the button its
+            // natural size, floating off-centre in it.
             HStack(spacing: 8) {
-                Button(L10n.t("Открыть окно", "Open window")) { openWindow(id: "main") }
-                    .buttonStyle(.glassProminent)
-                    .frame(maxWidth: .infinity)
-                Button(L10n.t("Выйти", "Quit")) { NSApplication.shared.terminate(nil) }
-                    .buttonStyle(.glass)
-                    .frame(width: 84)
+                Button {
+                    openWindow(id: "main")
+                } label: {
+                    Text(L10n.t("Открыть окно", "Open window"))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+
+                Button {
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Text(L10n.t("Выйти", "Quit"))
+                        .frame(width: 92 - 24)
+                }
+                .buttonStyle(.glass)
             }
         }
         .padding(16)
@@ -99,8 +111,9 @@ struct MenuBarPanel: View {
                 .init(value: FanMode.curve, title: L10n.t("Кривая", "Curve")),
             ],
             selection: current,
-            segmentWidth: 84,
-            fontSize: 11.5
+            segmentWidth: nil,
+            fontSize: 11.5,
+            fills: true
         )
     }
 
@@ -111,22 +124,20 @@ struct MenuBarPanel: View {
                     Text(SensorCatalog.info(for: sensor.key).name)
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.ink.opacity(0.75))
-                        .frame(width: 124, alignment: .leading)
+                        .frame(width: 128, alignment: .leading)
                         .lineLimit(1)
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Palette.ink.opacity(0.08))
-                            Capsule()
-                                .fill(sensor.value > 70 ? Palette.heat : Palette.calm)
-                                .frame(width: max(geometry.size.width
-                                                  * min(max((sensor.value - 20) / 80, 0), 1), 3))
-                        }
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Palette.ink.opacity(0.08))
+                        Capsule()
+                            .fill(sensor.value > 70 ? Palette.heat : Palette.calm)
+                            .scaleEffect(x: max(min(max((sensor.value - 20) / 80, 0), 1), 0.01),
+                                         y: 1, anchor: .leading)
                     }
                     .frame(height: 3)
-                    Text(Format.temperature(sensor.value))
+                    Text(Format.temperatureFine(sensor.value).replacingOccurrences(of: " °C", with: "°"))
                         .font(.system(size: 11.5))
                         .monospacedDigit()
-                        .frame(width: 42, alignment: .trailing)
+                        .frame(width: 46, alignment: .trailing)
                 }
             }
         }

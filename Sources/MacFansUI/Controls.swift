@@ -17,6 +17,9 @@ struct GlassSegmented<Value: Hashable>: View {
     /// nil lets each segment size to its own label, as in the design.
     var segmentWidth: CGFloat? = 96
     var fontSize: CGFloat = 12.5
+    /// Segments share the available width equally, so the control fills the row
+    /// it sits in - the menu bar panel's mode switch spans the panel this way.
+    var fills = false
 
     @Namespace private var namespace
 
@@ -29,8 +32,9 @@ struct GlassSegmented<Value: Hashable>: View {
                 Text(item.title)
                     .font(.system(size: fontSize, weight: .medium))
                     .foregroundStyle(isSelected ? Palette.ink : Palette.ink.opacity(0.55))
-                    .frame(width: segmentWidth)
-                    .padding(.horizontal, segmentWidth == nil ? 16 : 0)
+                    .frame(width: fills ? nil : segmentWidth)
+                    .frame(maxWidth: fills ? .infinity : nil)
+                    .padding(.horizontal, (segmentWidth == nil && !fills) ? 16 : 0)
                     .padding(.vertical, 6)
                     .background {
                         if isSelected {

@@ -69,9 +69,19 @@ enum GlassStyle {
 
     /// Apparent lightness of the material itself, and a veil matching it. The
     /// level is what makes the frost veil lightness-neutral, so it is not private:
-    /// a test checks that the veil's colour really does sit at it.
+    /// a test checks that the veil's colour really does sit at it. Not adaptive:
+    /// the material is pinned dark (see `VisualEffectBackground`), so its match
+    /// is one colour.
     static let materialLevel = 0.1
-    private static let materialMatch = Color.adaptive(light: "#e6e8ec", dark: "#191c21")
+    private static let materialMatch = Color(nsColor: NSColor(hex: "#191c21"))
+
+    /// The blur itself has a floor of opacity that no veil can get under - the
+    /// system material is not clear glass, it is frosted glass. So the bottom
+    /// quarter of the Frost dial fades the blur out altogether, and at zero the
+    /// window is a clear pane with only the tone laid on it.
+    static func blurPresence(_ frost: Double) -> Double {
+        min(max(frost, 0) / 0.25, 1)
+    }
 
     /// What the backing ends up looking like, 0 black to 1 white.
     ///
@@ -98,17 +108,29 @@ enum GlassStyle {
 /// behind stays sharp - which is exactly how the frosting went missing.
 struct VisualEffectBackground: NSViewRepresentable {
     var material: NSVisualEffectView.Material = .underWindowBackground
+    /// How much of the blur is there at all, 0 to 1. Below 1 the desktop shows
+    /// through it unblurred; at 0 the pane is clear glass.
+    var presence: Double = 1
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = material
         view.blendingMode = .behindWindow
         view.state = .active
+        // Pinned dark whatever the window's scheme. The scheme flips to light
+        // partway up the Tone dial so the ink can go dark, and when the material
+        // followed it the whole backing snapped from a dark blur to a light one
+        // at that point - the jump to white that was reported. The blur is the
+        // same dark glass at every setting now; only the veils over it change,
+        // and they change continuously.
+        view.appearance = NSAppearance(named: .darkAqua)
+        view.alphaValue = presence
         return view
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
         view.material = material
+        view.alphaValue = presence
     }
 }
 
@@ -120,7 +142,7 @@ struct GlassBackground: View {
 
     var body: some View {
         ZStack {
-            VisualEffectBackground()
+            VisualEffectBackground(presence: GlassStyle.blurPresence(frost))
             Rectangle().fill(GlassStyle.frostVeil(frost))
             Rectangle().fill(GlassStyle.toneVeil(tint))
         }
