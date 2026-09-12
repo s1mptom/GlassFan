@@ -30,7 +30,7 @@ struct MenuBarPanel: View {
             // natural size, floating off-centre in it.
             HStack(spacing: 8) {
                 Button {
-                    openWindow(id: "main")
+                    MainWindowOpener.open(using: openWindow)
                 } label: {
                     Text(L10n.t("Открыть окно", "Open window"))
                         .frame(maxWidth: .infinity)
@@ -160,3 +160,51 @@ struct MenuBarPanel: View {
         }
     }
 }
+
+/// Brings the main window in front of whatever the user is doing.
+///
+/// `openWindow` alone was the whole of the menu bar's "Open window", and pressing
+/// it did nothing anyone could see except turn the panel grey. The press landed
+/// and the window was ordered in - taking key from the panel, hence the grey -
+/// but a menu bar panel does not activate its app, so the window came forward
+/// inside an app that was behind everything else: behind the frontmost app, or
+/// on the Space it was last on. The window's own activation only runs the first
+/// time it appears.
+///
+/// So everything that can leave it out of sight is handled: the panel is put
+/// away, the app is activated, the window is pulled to this Space, brought back
+/// onto a screen if it is off all of them, and ordered front regardless.
+@MainActor
+enum MainWindowOpener {
+    static func open(using openWindow: OpenWindowAction) {
+        let panel = NSApp.keyWindow
+        NSApp.activate()
+        openWindow(id: "main")
+        DispatchQueue.main.async {
+            guard let window = mainWindow() else { return }
+            if let panel, panel !== window { panel.orderOut(nil) }
+            window.collectionBehavior.insert(.moveToActiveSpace)
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(window.frame) }) {
+                window.center()
+            }
+            NSApp.activate()
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
+    }
+
+    private static func mainWindow() -> NSWindow? {
+        NSApp.windows.first { $0.canBecomeMain && $0.styleMask.contains(.titled) }
+    }
+
+    /// What the window and the app look like right now, for the reopen hook.
+    static func describe() -> String {
+        let main = NSApp.windows.first { $0.canBecomeMain && $0.styleMask.contains(.titled) }
+        return "appActive=\(NSApp.isActive) window=\(main == nil ? "none" : "present") "
+            + "visible=\(main?.isVisible ?? false) key=\(main?.isKeyWindow ?? false) "
+            + "onScreen=\(main?.occlusionState.contains(.visible) ?? false) "
+            + "frontmostApp=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")"
+    }
+}
+

@@ -85,6 +85,7 @@ public struct GlassFanApp: App {
 /// The strip in the menu bar: hottest sensor and the faster fan, nothing else.
 struct MenuBarLabel: View {
     @Environment(DaemonClient.self) private var client
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HStack(spacing: 4) {
@@ -97,6 +98,23 @@ struct MenuBarLabel: View {
             }
         }
         .monospacedDigit()
+        // Measurement hook for the menu bar's "Open window": the label lives as
+        // long as the app does, so it can reopen a closed window after the test
+        // has moved focus to another app. GLASSFAN_REOPEN_PLAIN=1 uses the old,
+        // bare openWindow, for comparison.
+        .task {
+            guard let delay = ProcessInfo.processInfo.environment["GLASSFAN_REOPEN_AFTER"]
+                .flatMap(Double.init) else { return }
+            try? await Task.sleep(for: .seconds(delay))
+            Diagnostics.log("[reopen] before: " + MainWindowOpener.describe())
+            if ProcessInfo.processInfo.environment["GLASSFAN_REOPEN_PLAIN"] == "1" {
+                openWindow(id: "main")
+            } else {
+                MainWindowOpener.open(using: openWindow)
+            }
+            try? await Task.sleep(for: .seconds(1))
+            Diagnostics.log("[reopen] after:  " + MainWindowOpener.describe())
+        }
     }
 }
 
