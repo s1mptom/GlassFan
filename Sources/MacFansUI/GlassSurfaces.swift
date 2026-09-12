@@ -10,10 +10,26 @@ enum GlassStyle {
     static let tintKey = "glassTint"
 
     /// 0 leaves the window a clear pane; 1 frosts it right over.
-    static let defaultFrost = 0.62
-    /// Negative darkens, positive lightens, 0 leaves the material as the system draws it.
-    /// The design's glass is dark, so out of the box the tone leans that way.
-    static let defaultTint = -0.35
+    static let defaultFrost = 0.5
+
+    /// Negative darkens, positive lightens. Out of the box the tone follows the
+    /// system's appearance: a Mac in Dark Mode gets dark glass, one in Light
+    /// Mode gets light glass. Only a default - the moment the dial is touched
+    /// the stored value wins and the appearance no longer matters.
+    static var defaultTint: Double { defaultTint(dark: systemIsDark) }
+
+    static func defaultTint(dark: Bool) -> Double { dark ? -0.5 : 0.5 }
+
+    private static var systemIsDark: Bool {
+        NSApplication.shared.effectiveAppearance
+            .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    /// Where on the Tone dial the ink flips from white to dark. Set by eye on the
+    /// real window rather than by the arithmetic in `apparentLightness`: that
+    /// model assumes a dark material under the veil, and with the pane clear the
+    /// desktop shows through and reads lighter than the model says.
+    static let inkFlipTint = 0.4
 
     static let frostRange: ClosedRange<Double> = 0...1
     static let tintRange: ClosedRange<Double> = -1...1
@@ -101,7 +117,7 @@ enum GlassStyle {
     /// alone now, so the ink flips at the same place on the dial whatever the
     /// frosting - it used to depend on both and move about.
     static func isLight(tint: Double) -> Bool {
-        apparentLightness(tint: tint) > 0.5
+        tint >= inkFlipTint
     }
 }
 

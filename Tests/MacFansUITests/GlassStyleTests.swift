@@ -77,16 +77,25 @@ struct GlassStyleTests {
         #expect(!GlassStyle.toneIsWhite(-0.3))
     }
 
-    @Test("the ink flips only once the backing is genuinely light")
+    @Test("the ink flips at +40% on the tone dial, and only there")
     func inkFlipsWithTheTone() {
         #expect(GlassStyle.isLight(tint: -1) == false)
         #expect(GlassStyle.isLight(tint: 0) == false)
-        #expect(GlassStyle.isLight(tint: GlassStyle.defaultTint) == false)
+        #expect(GlassStyle.isLight(tint: 0.39) == false)
+        #expect(GlassStyle.isLight(tint: 0.4) == true)
         #expect(GlassStyle.isLight(tint: 1) == true)
-        // Wherever the crossing is, it must be past the neutral centre: flipping
-        // to dark ink on a backing that is still dark would be worse than the
-        // bug it replaced.
-        #expect(GlassStyle.isLight(tint: 0.2) == false)
+    }
+
+    /// Out of the box the glass matches the system: dark glass on a dark Mac,
+    /// light on a light one - and each default sits on the right side of the
+    /// ink flip, so neither ships as white text on a light pane or the reverse.
+    @Test("defaults follow the appearance and land on the right side of the flip")
+    func defaultsFollowAppearance() {
+        #expect(GlassStyle.defaultFrost == 0.5)
+        #expect(GlassStyle.defaultTint(dark: true) == -0.5)
+        #expect(GlassStyle.defaultTint(dark: false) == 0.5)
+        #expect(GlassStyle.isLight(tint: GlassStyle.defaultTint(dark: true)) == false)
+        #expect(GlassStyle.isLight(tint: GlassStyle.defaultTint(dark: false)) == true)
     }
 
     @Test("values beyond the dials' travel are clamped rather than extrapolated")
