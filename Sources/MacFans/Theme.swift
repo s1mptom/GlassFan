@@ -44,40 +44,6 @@ enum Palette {
     static let warning = Color.adaptive(light: "#eda100", dark: "#c98500")
     static let critical = Color.adaptive(light: "#e34948", dark: "#e66767")
     static let calm = Color.adaptive(light: "#2a78d6", dark: "#3987e5")
-
-    /// Ambient tint for the window background: cool when idle, warm when hot.
-    static func heatTint(_ temperature: Double) -> Color {
-        let t = min(max((temperature - 40) / 50, 0), 1)
-        return Color(hue: 0.58 - 0.5 * t * 0.22, saturation: 0.55, brightness: 0.75)
-    }
-}
-
-/// The moving backdrop the glass reads against. Without something behind it,
-/// a glass surface has nothing to refract and just looks flat.
-struct AmbientBackground: View {
-    var temperature: Double
-
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Palette.heatTint(temperature).opacity(0.30),
-                    Palette.heatTint(temperature + 12).opacity(0.16),
-                    Color.clear,
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            RadialGradient(
-                colors: [Palette.heatTint(temperature + 20).opacity(0.22), .clear],
-                center: .bottomTrailing,
-                startRadius: 40,
-                endRadius: 520
-            )
-        }
-        .animation(.easeInOut(duration: 1.2), value: temperature)
-        .ignoresSafeArea()
-    }
 }
 
 extension View {

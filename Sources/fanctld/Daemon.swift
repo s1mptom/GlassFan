@@ -24,6 +24,9 @@ final class Daemon {
     private var temperatureKeys: [String] = []
     private var lastSnapshot: Snapshot?
     private var lastTick = Date()
+    /// Last write failure per fan, so a persistent refusal is logged once per change
+    /// rather than on every tick.
+    private var lastWriteError: [Int: String?] = [:]
     private let stateLock = NSLock()
 
     init() throws {
@@ -111,15 +114,24 @@ final class Daemon {
             let target = controller.update(temperatures: temperatures, emergencyTemp: config.emergencyTemp)
             controllers[fan.index] = controller
 
+            // Whether we are actually in control is decided by the write, not by the
+            // intention behind it.
+            var applied = false
+            var writeError: String?
             do {
                 if let target {
                     try hardware.setTarget(fan.index, rpm: target)
+                    applied = true
                 } else {
                     try hardware.release(fan.index)
                 }
             } catch {
-                Log.error("fan \(fan.index): \(error)")
+                writeError = "\(error)"
+                if lastWriteError[fan.index] != writeError {
+                    Log.error("fan \(fan.index): \(error)")
+                }
             }
+            lastWriteError[fan.index] = writeError
 
             readings.append(FanReading(
                 index: fan.index,
@@ -127,9 +139,10 @@ final class Daemon {
                 targetRPM: target ?? hardware.targetRPM(fan.index) ?? 0,
                 limits: fan.limits,
                 mode: controller.settings.mode,
-                forced: target != nil,
+                forced: applied,
                 drivingTemp: controller.lastDrivingTemp,
-                emergency: controller.isEmergency
+                emergency: controller.isEmergency,
+                writeError: writeError
             ))
         }
 

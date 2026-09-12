@@ -22,9 +22,13 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
     /// Temperature currently steering the curve, when there is one.
     public var drivingTemp: Double?
     public var emergency: Bool
+    /// Set when the last write to this fan was refused, so the UI can say so instead
+    /// of claiming control it does not have.
+    public var writeError: String?
 
     public init(index: Int, actualRPM: Double, targetRPM: Double, limits: FanLimits,
-                mode: FanMode, forced: Bool, drivingTemp: Double?, emergency: Bool) {
+                mode: FanMode, forced: Bool, drivingTemp: Double?, emergency: Bool,
+                writeError: String? = nil) {
         self.index = index
         self.actualRPM = actualRPM
         self.targetRPM = targetRPM
@@ -33,6 +37,7 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
         self.forced = forced
         self.drivingTemp = drivingTemp
         self.emergency = emergency
+        self.writeError = writeError
     }
 
     public var id: Int { index }

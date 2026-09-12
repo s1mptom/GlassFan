@@ -59,7 +59,10 @@ public enum SensorCatalog {
         case key.hasPrefix("TG"): return .gpu
         case key.hasPrefix("TB"): return .battery
         case key.hasPrefix("TH"): return .storage
-        case key.hasPrefix("Ts"), key.hasPrefix("Ta"), key.hasPrefix("TA"): return .comfort
+        // No prefix earns the comfort group. Both "Ts" and "Ta" turned out to contain
+        // sensors running 20 degrees hotter than the case (Ts02 at 57 C, TaTP at 54 C),
+        // and a wrong number under a heading the user trusts is worse than no heading.
+        // Only the curated keys above are treated as chassis sensors.
         case key.hasPrefix("TP"), key.hasPrefix("TM"), key.hasPrefix("TD"): return .power
         default: return .other
         }

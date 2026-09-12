@@ -3,6 +3,7 @@ import FanKit
 
 struct SettingsView: View {
     @Environment(DaemonClient.self) private var client
+    @AppStorage(WindowTranslucency.storageKey) private var translucency: WindowTranslucency = .glassOnly
 
     private func configBinding() -> Binding<AppConfig>? {
         guard let current = client.draftConfig ?? client.snapshot?.config else { return nil }
@@ -14,16 +15,20 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let config = configBinding() {
-                    safetyCard(config)
-                    samplingCard(config)
+            GlassEffectContainer(spacing: 18) {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let config = configBinding() {
+                        safetyCard(config)
+                        samplingCard(config)
+                    }
+                    appearanceCard
+                    panicCard
+                    aboutCard
                 }
-                panicCard
-                aboutCard
             }
             .padding(22)
         }
+        .scrollContentBackground(.hidden)
     }
 
     private func safetyCard(_ config: Binding<AppConfig>) -> some View {
@@ -54,6 +59,23 @@ struct SettingsView: View {
                 Text(String(format: "%.2f c", config.wrappedValue.pollInterval)).monospacedDigit()
             }
             Slider(value: config.pollInterval, in: AppConfig.pollRange, step: 0.25)
+        }
+        .glassCard()
+    }
+
+    private var appearanceCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(L10n.t("Внешний вид", "Appearance"), systemImage: "sparkles")
+                .font(.headline)
+            Text(L10n.t("Насколько окно пропускает то, что за ним.",
+                        "How much of what is behind the window shows through."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("", selection: $translucency) {
+                ForEach(WindowTranslucency.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
         .glassCard()
     }

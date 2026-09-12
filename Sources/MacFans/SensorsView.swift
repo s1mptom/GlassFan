@@ -37,7 +37,8 @@ struct SensorsView: View {
             .padding(.vertical, 14)
 
             ScrollView {
-                VStack(spacing: 16) {
+                GlassEffectContainer(spacing: 16) {
+                    VStack(spacing: 16) {
                     ForEach(groups, id: \.0) { group, sensors in
                         VStack(alignment: .leading, spacing: 10) {
                             Label(group.title, systemImage: group.symbol)
@@ -48,10 +49,12 @@ struct SensorsView: View {
                         }
                         .glassCard()
                     }
+                    }
                 }
                 .padding(.horizontal, 22)
                 .padding(.bottom, 22)
             }
+            .scrollContentBackground(.hidden)
         }
     }
 }

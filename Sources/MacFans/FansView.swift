@@ -6,16 +6,19 @@ struct FansView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
-                ForEach(client.snapshot?.fans ?? []) { fan in
-                    FanCard(fan: fan)
-                }
-                if client.snapshot == nil {
-                    EmptyChartHint()
+            GlassEffectContainer(spacing: 18) {
+                VStack(spacing: 18) {
+                    ForEach(client.snapshot?.fans ?? []) { fan in
+                        FanCard(fan: fan)
+                    }
+                    if client.snapshot == nil {
+                        DataHint().glassCard()
+                    }
                 }
             }
             .padding(22)
         }
+        .scrollContentBackground(.hidden)
     }
 }
 

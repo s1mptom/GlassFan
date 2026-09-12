@@ -4,16 +4,21 @@ import FanKit
 @main
 struct MacFansApp: App {
     @State private var client = DaemonClient()
+    @AppStorage(WindowTranslucency.storageKey) private var translucency: WindowTranslucency = .glassOnly
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window(L10n.t("MacFans", "MacFans"), id: "main") {
             MainWindow()
                 .environment(client)
-                .task { client.start() }
+                .containerBackground(translucency.material, for: .window)
+                .task {
+                    client.start()
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1000, height: 680)
+        .defaultSize(width: 1080, height: 780)
 
         MenuBarExtra {
             MenuBarPanel()
@@ -77,23 +82,25 @@ struct MainWindow: View {
             List(Section.allCases, selection: $section) { item in
                 Label(item.title, systemImage: item.symbol).tag(item)
             }
+            .scrollContentBackground(.hidden)
+            .safeAreaInset(edge: .bottom) {
+                ConnectionBadge()
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
         } detail: {
-            ZStack {
-                AmbientBackground(temperature: client.hottest?.value ?? 40)
-                Group {
-                    switch section {
-                    case .dashboard: DashboardView()
-                    case .fans: FansView()
-                    case .sensors: SensorsView()
-                    case .settings: SettingsView()
-                    }
+            Group {
+                switch section {
+                case .dashboard: DashboardView()
+                case .fans: FansView()
+                case .sensors: SensorsView()
+                case .settings: SettingsView()
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .status) { ConnectionBadge() }
-            }
         }
+        .background(WindowConfigurator())
     }
 }
 

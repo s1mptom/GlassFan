@@ -17,6 +17,7 @@ struct TimeChart: View {
     let points: [SeriesPoint]
     let order: [String]
     let unit: String
+    var includesZero: Bool = false
     var valueFormat: (Double) -> String
 
     @State private var hoverDate: Date?
@@ -40,7 +41,7 @@ struct TimeChart: View {
             }
         }
         .chartForegroundStyleScale(range: order.indices.map { Palette.color($0) })
-        .chartYScale(domain: .automatic(includesZero: false))
+        .chartYScale(domain: .automatic(includesZero: includesZero))
         .chartLegend(.hidden)
         .chartYAxis {
             AxisMarks(position: .leading) { value in
@@ -55,8 +56,12 @@ struct TimeChart: View {
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 5)) { value in
                 AxisGridLine().foregroundStyle(.secondary.opacity(0.10))
-                AxisValueLabel(format: .dateTime.hour().minute())
-                    .foregroundStyle(.secondary)
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(date, format: .dateTime.hour().minute())
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .chartOverlay { proxy in

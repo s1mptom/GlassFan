@@ -39,14 +39,17 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                filters
-                tiles
-                temperatureCard
-                fanCard
+            GlassEffectContainer(spacing: 18) {
+                VStack(alignment: .leading, spacing: 14) {
+                    filters
+                    tiles
+                    temperatureCard
+                    fanCard
+                }
             }
             .padding(22)
         }
+        .scrollContentBackground(.hidden)
     }
 
     private var filters: some View {
@@ -78,17 +81,23 @@ struct DashboardView: View {
             guard let hottest = sensors.max(by: { $0.value < $1.value }) else { continue }
             result.append((group.title,
                            Format.temperature(hottest.value),
-                           SensorCatalog.info(for: hottest.key).name + "  " + hottest.key,
+                           hottest.key,
                            heatColor(hottest.value)))
         }
         for fan in client.snapshot?.fans ?? [] {
-            let caption = fan.forced
-                ? L10n.t("под управлением", "controlled") + " · " + fan.mode.rawValue
-                : L10n.t("система", "system")
+            let caption: String
+            if fan.writeError != nil {
+                caption = L10n.t("запись отклонена", "write refused")
+            } else if fan.forced {
+                caption = L10n.t("под управлением", "controlled") + " · " + fan.mode.rawValue
+            } else {
+                caption = L10n.t("система", "system")
+            }
             result.append((L10n.t("Вентилятор \(fan.index + 1)", "Fan \(fan.index + 1)"),
                            Format.rpm(fan.actualRPM),
                            caption,
-                           fan.emergency ? Palette.critical : Palette.calm))
+                           fan.writeError != nil ? Palette.warning
+                               : (fan.emergency ? Palette.critical : Palette.calm)))
         }
         return result
     }
@@ -119,12 +128,12 @@ struct DashboardView: View {
             }
 
             if points.isEmpty {
-                EmptyChartHint()
+                DataHint()
             } else {
                 TimeChart(points: points, order: names, unit: "°C") {
                     String(format: "%.0f°", $0)
                 }
-                .frame(height: 240)
+                .frame(height: 148)
 
                 ChartLegend(names: names,
                             values: trackedKeys.map { client.reading(for: $0) }) {
@@ -144,7 +153,7 @@ struct DashboardView: View {
             let names = fans.map { L10n.t("Вентилятор \($0.index + 1)", "Fan \($0.index + 1)") }
             let points = samples.flatMap { sample in
                 sample.fanRPM.enumerated().compactMap { index, rpm -> SeriesPoint? in
-                    guard index < names.count, rpm > 0 else { return nil }
+                    guard index < names.count else { return nil }
                     return SeriesPoint(date: Date(timeIntervalSince1970: sample.t),
                                        value: rpm,
                                        series: names[index])
@@ -152,12 +161,12 @@ struct DashboardView: View {
             }
 
             if points.isEmpty {
-                EmptyChartHint()
+                DataHint()
             } else {
-                TimeChart(points: points, order: names, unit: "rpm") {
+                TimeChart(points: points, order: names, unit: "rpm", includesZero: true) {
                     String(format: "%.0f", $0)
                 }
-                .frame(height: 180)
+                .frame(height: 104)
 
                 ChartLegend(names: names, values: fans.map { $0.actualRPM }) {
                     Format.rpm($0) + " rpm"
@@ -180,32 +189,79 @@ struct StatTile: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                .font(.system(size: 27, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(tint)
             Text(caption)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .frame(minWidth: 150, alignment: .leading)
-        .padding(14)
+        .frame(width: 128, alignment: .leading)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 11)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
     }
 }
 
-struct EmptyChartHint: View {
+/// Says which of the two silences this is: no daemon at all, or a daemon that has
+/// simply not produced a second sample yet.
+struct DataHint: View {
+    @Environment(DaemonClient.self) private var client
+
     var body: some View {
         HStack {
             Spacer()
-            VStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(L10n.t("Собираю данные…", "Collecting data…"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if client.isConnected {
+                VStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.t("Собираю данные…", "Collecting data…"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                DaemonMissingNotice()
             }
             Spacer()
         }
-        .frame(height: 140)
+        .frame(minHeight: 140)
+    }
+}
+
+/// The daemon is the whole engine, so its absence gets a real explanation and the
+/// exact command, not a spinner that spins forever.
+struct DaemonMissingNotice: View {
+    private let command = "/Users/pavel/myProjects/MacFans/Scripts/install.sh"
+    @State private var copied = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "bolt.horizontal.circle")
+                .font(.system(size: 28))
+                .foregroundStyle(Palette.warning)
+            Text(L10n.t("Демон не запущен", "The daemon is not running"))
+                .font(.headline)
+            Text(L10n.t("Управлять вентиляторами может только процесс с правами root. Поставь его одной командой:",
+                        "Only a root process can drive the fans. Install it with one command:"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            HStack(spacing: 8) {
+                Text(command)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                Button(copied ? L10n.t("Скопировано", "Copied") : L10n.t("Копировать", "Copy")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                    copied = true
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+            }
+            .padding(10)
+            .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        }
+        .padding(.vertical, 18)
     }
 }
