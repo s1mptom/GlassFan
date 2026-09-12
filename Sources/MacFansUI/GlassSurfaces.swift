@@ -51,7 +51,9 @@ enum GlassStyle {
     /// How much of the frost veil is laid down. Never fully opaque: some of the
     /// desktop always shows, or it is not glass.
     static func frostOpacity(_ frost: Double) -> Double {
-        min(max(frost, 0), 1) * 0.92
+        // Light-handed: the frosting is the blur radius now, and this is only
+        // the milkiness a frosted pane has on top of it.
+        min(max(frost, 0), 1) * 0.55
     }
 
     static func toneOpacity(_ tint: Double) -> Double {
@@ -103,7 +105,46 @@ enum GlassStyle {
     }
 }
 
-/// Real behind-window blur. A SwiftUI Material only blurs content inside its own
+/// Behind-window blur with a radius, which is the one thing the public material
+/// cannot do.
+///
+/// `NSVisualEffectView` blurs at a fixed radius per material, so all the Frost
+/// dial could do over it was lay down a veil - and "more frost" meant "more
+/// opaque", which is opacity, not glass. The window server keeps a blur radius
+/// per window and has for a decade (it is what iTerm's blur slider drives), but
+/// it is not public API. It is looked up at runtime rather than linked, so a
+/// system without it falls back to the material instead of failing to load,
+/// and the dial still does something there.
+enum WindowBlur {
+    private typealias MainConnection = @convention(c) () -> Int32
+    private typealias SetRadius = @convention(c) (Int32, Int32, Int32) -> Int32
+
+    private static let functions: (connection: MainConnection, setRadius: SetRadius)? = {
+        guard let process = dlopen(nil, RTLD_NOW),
+              let connection = dlsym(process, "CGSMainConnectionID"),
+              let setRadius = dlsym(process, "CGSSetWindowBackgroundBlurRadius")
+        else { return nil }
+        return (unsafeBitCast(connection, to: MainConnection.self),
+                unsafeBitCast(setRadius, to: SetRadius.self))
+    }()
+
+    static var isAvailable: Bool { functions != nil }
+
+    /// Frost 0 is a clear pane; Frost 1 is a heavy blur. Forty is about where
+    /// the desktop stops being recognisable, which is as frosted as glass gets.
+    static func radius(for frost: Double) -> Int {
+        Int((min(max(frost, 0), 1) * 40).rounded())
+    }
+
+    static func apply(radius: Int, to window: NSWindow) {
+        guard let functions else { return }
+        _ = functions.setRadius(functions.connection(),
+                                Int32(window.windowNumber), Int32(max(radius, 0)))
+    }
+}
+
+/// Real behind-window blur, at the material's own fixed radius. The fallback
+/// for a system whose window server will not take a radius from us. A SwiftUI Material only blurs content inside its own
 /// window, so in a transparent window it is just a translucent fill and the desktop
 /// behind stays sharp - which is exactly how the frosting went missing.
 struct VisualEffectBackground: NSViewRepresentable {
@@ -142,7 +183,12 @@ struct GlassBackground: View {
 
     var body: some View {
         ZStack {
-            VisualEffectBackground(presence: GlassStyle.blurPresence(frost))
+            // With a real radius on the window there is nothing for a material
+            // to add but its own tint, so it is left out; the veils sit straight
+            // on the blurred desktop.
+            if !WindowBlur.isAvailable {
+                VisualEffectBackground(presence: GlassStyle.blurPresence(frost))
+            }
             Rectangle().fill(GlassStyle.frostVeil(frost))
             Rectangle().fill(GlassStyle.toneVeil(tint))
         }
@@ -164,6 +210,9 @@ enum Diagnostics {
 /// Reports what it actually managed to change, because "the window looks opaque" and
 /// "the code that makes it transparent never ran" are indistinguishable from outside.
 struct WindowConfigurator: NSViewRepresentable {
+    /// The Frost dial, as a radius for the window server.
+    var blurRadius: Int = 0
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         guard !Runtime.isPreview else { return view }
@@ -177,16 +226,21 @@ struct WindowConfigurator: NSViewRepresentable {
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
             Self.centerOnce(window)
+            WindowBlur.apply(radius: blurRadius, to: window)
 
             let cleared = Self.clearOpaqueBackings(in: window.contentView)
             Diagnostics.log("[window] isOpaque=\(window.isOpaque) "
                 + "background=\(window.backgroundColor.alphaComponent) "
-                + "clearedBackings=\(cleared)")
+                + "clearedBackings=\(cleared) "
+                + "blur=\(WindowBlur.isAvailable ? "radius \(blurRadius)" : "material fallback")")
         }
         return view
     }
 
-    func updateNSView(_ view: NSView, context: Context) {}
+    func updateNSView(_ view: NSView, context: Context) {
+        guard !Runtime.isPreview, let window = view.window else { return }
+        WindowBlur.apply(radius: blurRadius, to: window)
+    }
 
     private nonisolated(unsafe) static var hasCentred = false
 

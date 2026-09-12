@@ -117,8 +117,9 @@ struct ScreenCommands: View {
 
 struct MainWindow: View {
     @Environment(DaemonClient.self) private var client
-    /// Only the tone is needed here: the frosting is lightness-neutral, so it
-    /// cannot change which way the ink has to go.
+    @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
+    /// The scheme follows the tone alone: the frosting is lightness-neutral, so
+    /// it cannot change which way the ink has to go.
     @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
     /// Remembered between launches, so the app reopens where it was left.
     @AppStorage(Screen.storageKey) private var screen: Screen = .overview
@@ -132,7 +133,7 @@ struct MainWindow: View {
             GlassBackground()
             content
         }
-        .background(WindowConfigurator())
+        .background(WindowConfigurator(blurRadius: WindowBlur.radius(for: frost)))
         // Both, and they do different jobs. `preferredColorScheme` travels up to the
         // window and settles its chrome; only writing the environment value settles
         // the scheme the content is drawn against, which is what decides where
