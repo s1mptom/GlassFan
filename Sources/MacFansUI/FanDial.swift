@@ -107,6 +107,7 @@ struct FanDial: View {
     private static let topSpinRate: Double = 300
 
     @State private var spin = BladeSpin()
+    private var visibility = WindowVisibility.shared
 
     /// Share of the fan's top speed, not of the span above its minimum: measured from
     /// the minimum, an idling fan fills under one percent of the arc and the dial reads
@@ -209,9 +210,12 @@ struct FanDial: View {
     ///
     /// Sixty frames a second, not the display's own rate: this is a decorative
     /// spinner and nobody can tell 120 from 60 on it. Paused outright when the fan
-    /// has stopped, so a quiet machine wakes nothing at all.
+    /// has stopped, and when the window is behind another or on another Space -
+    /// every frame of this is a fresh commit of a whole glass window, and nobody
+    /// is looking.
     private var disc: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: spinRate == 0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60,
+                                paused: spinRate == 0 || !visibility.isVisible)) { context in
             let angle = spin.advance(to: context.date, rate: spinRate)
             TurningDisc(size: size, blades: Self.bladeCount, spread: blurred,
                         tint: bladeColor, ink: bladeOpacity)

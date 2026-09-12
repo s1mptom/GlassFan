@@ -196,6 +196,30 @@ struct GlassBackground: View {
     }
 }
 
+/// Whether anyone can see the window. Read by the things that animate on a
+/// clock, so a window that is behind another one, on another Space, or
+/// minimised stops asking for sixty frames a second of a glass window nobody
+/// is looking at. Closing the window releases it, so that case needs nothing.
+@MainActor
+@Observable
+final class WindowVisibility {
+    static let shared = WindowVisibility()
+    private(set) var isVisible = true
+
+    fileprivate func track(_ window: NSWindow) {
+        isVisible = window.occlusionState.contains(.visible)
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window, queue: .main
+        ) { [weak self, weak window] _ in
+            guard let window else { return }
+            MainActor.assumeIsolated {
+                self?.isVisible = window.occlusionState.contains(.visible)
+            }
+        }
+    }
+}
+
 enum Diagnostics {
     /// Straight to stderr: a redirected GUI process buffers stdout, and a diagnostic
     /// that only appears at exit is no diagnostic at all.
@@ -227,6 +251,7 @@ struct WindowConfigurator: NSViewRepresentable {
             window.styleMask.insert(.fullSizeContentView)
             Self.centerOnce(window)
             WindowBlur.apply(radius: blurRadius, to: window)
+            WindowVisibility.shared.track(window)
 
             let cleared = Self.clearOpaqueBackings(in: window.contentView)
             Diagnostics.log("[window] isOpaque=\(window.isOpaque) "
