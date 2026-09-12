@@ -58,12 +58,35 @@ public struct SensorInfo: Sendable, Equatable, Identifiable, Hashable {
 /// Human names for the SMC keys worth showing. Anything unknown keeps its raw key and
 /// is classified by prefix, so a sensor is never mislabelled - at worst it is unnamed.
 public enum SensorCatalog {
+    /// Memoised, because the interface asks this constantly.
+    ///
+    /// A machine reports a couple of hundred sensors and the sensors screen wants
+    /// the group and the display name of every one of them on every redraw. An
+    /// uncurated key builds its name from scratch, so without a cache a single
+    /// pass over the list was thousands of small string allocations. The answer
+    /// for a given key never changes, so it is worked out once.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: SensorInfo] = [:]
+
     public static func info(for key: String) -> SensorInfo {
+        cacheLock.lock()
+        let hit = cache[key]
+        cacheLock.unlock()
+        if let hit { return hit }
+
+        let value: SensorInfo
         if let curated = curated[key] {
-            return SensorInfo(key: key, group: curated.0, name: curated.1)
+            value = SensorInfo(key: key, group: curated.0, name: curated.1)
+        } else {
+            let group = groupByPrefix(key)
+            value = SensorInfo(key: key, group: group,
+                               name: generatedName(for: key, group: group))
         }
-        let group = groupByPrefix(key)
-        return SensorInfo(key: key, group: group, name: generatedName(for: key, group: group))
+
+        cacheLock.lock()
+        cache[key] = value
+        cacheLock.unlock()
+        return value
     }
 
     private static func groupByPrefix(_ key: String) -> SensorGroup {

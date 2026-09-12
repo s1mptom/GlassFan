@@ -32,5 +32,8 @@ let package = Package(
                           swiftSettings: [.swiftLanguageMode(.v5)]),
 
         .testTarget(name: "FanKitTests", dependencies: ["FanKit"]),
+
+        .testTarget(name: "MacFansUITests", dependencies: ["MacFansUI"],
+                    swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

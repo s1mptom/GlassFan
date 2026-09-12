@@ -155,8 +155,11 @@ struct CurveEditor: View {
                 Circle()
                     .fill(Palette.heat)
                     .frame(width: 11, height: 11)
+                    // The halo was a live shadow on a dot that moves every second,
+                    // which is an offscreen blur pass for something a ring draws
+                    // just as well.
                     .overlay(Circle().strokeBorder(Palette.heat.opacity(0.25), lineWidth: 4))
-                    .shadow(color: Palette.heat.opacity(0.7), radius: 7)
+                    .overlay(Circle().strokeBorder(Palette.heat.opacity(0.12), lineWidth: 9))
                     .position(marker)
                     .animation(.easeInOut(duration: 0.8), value: currentTemp)
 
@@ -166,7 +169,17 @@ struct CurveEditor: View {
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .glassSurface(cornerRadius: 999)
+                    // A plain capsule, not a glass surface. This label moves with
+                    // every reading, and re-rendering a Liquid Glass material on
+                    // something that is in motion a second out of every second is
+                    // the most expensive thing on the screen for the least gain -
+                    // it is a tooltip the size of a postage stamp.
+                    .background(
+                        Capsule()
+                            .fill(Palette.surface.opacity(0.82))
+                            .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.12),
+                                                            lineWidth: 0.5))
+                    )
                     .position(x: min(marker.x + 52, plot.maxX - 46),
                               y: min(max(marker.y, plot.minY + 12), plot.maxY - 12))
                     .animation(.easeInOut(duration: 0.8), value: currentTemp)

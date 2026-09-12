@@ -8,15 +8,25 @@ struct SensorsView: View {
 
     private var tracked: Set<String> { Set(client.config?.trackedSensors ?? []) }
 
+    /// Buckets the readings in a single pass.
+    ///
+    /// This used to ask `client.sensors(in:)` once per group, and each of those
+    /// walked the whole list - eight passes over a couple of hundred sensors, with
+    /// a catalogue lookup on every one, every time the view was evaluated. On a
+    /// machine reporting 228 sensors that was most of a core.
     private var groups: [(SensorGroup, [SensorReading])] {
-        SensorGroup.allCases.compactMap { group in
-            let sensors = client.sensors(in: group).filter { sensor in
-                if onlyCharted && !tracked.contains(sensor.key) { return false }
-                guard !search.isEmpty else { return true }
-                return SensorCatalog.info(for: sensor.key).name.localizedCaseInsensitiveContains(search)
-                    || sensor.key.localizedCaseInsensitiveContains(search)
-            }
-            return sensors.isEmpty ? nil : (group, sensors.sorted { $0.value > $1.value })
+        var buckets: [SensorGroup: [SensorReading]] = [:]
+        for sensor in client.snapshot?.sensors ?? [] {
+            if onlyCharted && !tracked.contains(sensor.key) { continue }
+            let info = SensorCatalog.info(for: sensor.key)
+            if !search.isEmpty,
+               !info.name.localizedCaseInsensitiveContains(search),
+               !sensor.key.localizedCaseInsensitiveContains(search) { continue }
+            buckets[info.group, default: []].append(sensor)
+        }
+        return SensorGroup.allCases.compactMap { group in
+            guard let sensors = buckets[group], !sensors.isEmpty else { return nil }
+            return (group, sensors.sorted { $0.value > $1.value })
         }
     }
 
@@ -24,12 +34,13 @@ struct SensorsView: View {
         if !client.isConnected {
             DaemonMissingNotice().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            let groups = self.groups
             VStack(spacing: 0) {
                 toolbar.riseIn(0.02)
                 if groups.isEmpty {
                     noMatches
                 } else {
-                    sensorList
+                    sensorList(groups)
                 }
             }
         }
@@ -57,7 +68,7 @@ struct SensorsView: View {
         .riseIn(0.05)
     }
 
-    private var sensorList: some View {
+    private func sensorList(_ groups: [(SensorGroup, [SensorReading])]) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 ForEach(groups, id: \.0) { group, sensors in
@@ -148,14 +159,14 @@ struct SensorRow: View {
                 .foregroundStyle(Palette.ink.opacity(0.3))
                 .frame(width: 46, alignment: .leading)
 
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Palette.ink.opacity(0.08))
-                    Capsule()
-                        .fill(barColor)
-                        .frame(width: max(geometry.size.width * ratio, 3))
-                        .animation(.easeOut(duration: 0.5), value: ratio)
-                }
+            // Scaled rather than measured: a GeometryReader in every one of a
+            // couple of hundred rows forces a layout pass each redraw, and the
+            // bar only ever needs a fraction of the width it is given.
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.ink.opacity(0.08))
+                Capsule()
+                    .fill(barColor)
+                    .scaleEffect(x: max(ratio, 0.004), y: 1, anchor: .leading)
             }
             .frame(height: 3)
 

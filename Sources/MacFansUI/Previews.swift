@@ -62,6 +62,26 @@ private struct PreviewShell: View {
         .frame(width: 360, height: 420)
 }
 
+/// The blades at a ladder of speeds, to judge how far the motion wash has to
+/// smear before the gaps between them close.
+#Preview("Blades at speed") {
+    let limits = FanLimits(minRPM: 1499, maxRPM: 5348)
+    return HStack(spacing: 18) {
+        ForEach([0.0, 900, 1800, 2600, 3800, 5348], id: \.self) { rpm in
+            VStack(spacing: 8) {
+                FanDial(rpm: rpm, limits: limits, controlled: rpm > 0, size: 116)
+                Text(Format.rpm(rpm))
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.ink.opacity(0.4))
+            }
+        }
+    }
+    .padding(22)
+    .background(Color(white: 0.06))
+    .preferredColorScheme(.dark)
+}
+
 #Preview("Menu bar") {
     MenuBarPanel()
         .environment(DaemonClient.demo())

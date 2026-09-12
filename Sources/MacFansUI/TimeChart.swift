@@ -3,10 +3,18 @@ import Charts
 import FanKit
 
 struct SeriesPoint: Identifiable {
-    let id = UUID()
     let date: Date
     let value: Double
     let series: String
+
+    /// Derived, not a fresh `UUID` per point.
+    ///
+    /// The overview rebuilds up to three hundred samples across four series on
+    /// every update, and minting twelve hundred UUIDs a second is both the
+    /// allocation and the reason Swift Charts could never match a point to the
+    /// one it drew a moment ago: with new identities every time, nothing is the
+    /// same mark moved, everything is a mark destroyed and another created.
+    var id: String { "\(series)@\(date.timeIntervalSince1970)" }
 }
 
 /// A line chart over time with a crosshair readout.
@@ -110,11 +118,16 @@ struct TimeChart: View {
                 }
             }
         }
+        // Only while the line is drawing itself in. Left in place afterwards this
+        // is a full-size mask over the whole plot - an offscreen pass the chart
+        // pays for on every redraw, for a wipe that finished seconds ago.
         .mask(alignment: .leading) {
             GeometryReader { geometry in
-                Rectangle().frame(width: geometry.size.width * traced)
+                Rectangle().frame(width: traced < 1 ? geometry.size.width * traced
+                                                    : geometry.size.width)
             }
         }
+        .compositingGroup()
         .onAppear {
             guard !Runtime.isPreview else { return }
             withAnimation(.easeInOut(duration: 1.5).delay(0.15)) { traced = 1 }

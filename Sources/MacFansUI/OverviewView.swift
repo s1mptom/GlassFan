@@ -35,9 +35,15 @@ struct OverviewView: View {
         max(chartableKeys.count - Palette.series.count, 0)
     }
 
+    /// Three hundred was more marks than the plot has pixels to tell apart, and
+    /// Swift Charts pays for every one of them: four series over three hundred
+    /// samples is twelve hundred line marks rebuilt on every reading. At this
+    /// width the curves are indistinguishable.
+    private static let sampleLimit = 180
+
     private var samples: [HistorySample] {
         let cutoff = Date().timeIntervalSince1970 - Double(window.rawValue)
-        return Self.downsample(client.history.filter { $0.t >= cutoff }, to: 300)
+        return Self.downsample(client.history.filter { $0.t >= cutoff }, to: Self.sampleLimit)
     }
 
     /// A little air above and below the data, never anchored at zero: room temperature
@@ -190,11 +196,18 @@ struct OverviewView: View {
         .padding(.top, 26)
     }
 
+    /// One walk over the readings, not one per group. `sensors(in:)` scans the
+    /// whole list each time it is called, and calling it five times a second over
+    /// a couple of hundred sensors is work this row does not need.
     private var headlineGroups: [(String, Double)] {
-        [SensorGroup.cpu, .gpu, .comfort, .storage, .battery].compactMap { group in
-            guard let hottest = client.sensors(in: group).max(by: { $0.value < $1.value })
-            else { return nil }
-            return (group.shortTitle, hottest.value)
+        var hottest: [SensorGroup: Double] = [:]
+        for sensor in client.snapshot?.sensors ?? [] {
+            let group = SensorCatalog.info(for: sensor.key).group
+            hottest[group] = max(hottest[group] ?? -.infinity, sensor.value)
+        }
+        return [SensorGroup.cpu, .gpu, .comfort, .storage, .battery].compactMap { group in
+            guard let value = hottest[group] else { return nil }
+            return (group.shortTitle, value)
         }
     }
 
@@ -219,12 +232,15 @@ struct OverviewView: View {
 
     private var chart: some View {
         let names = trackedKeys.map { SensorCatalog.info(for: $0).name }
-        let points = samples.flatMap { sample in
-            trackedKeys.compactMap { key -> SeriesPoint? in
+        // The name was looked up inside the inner loop, so a catalogue lookup ran
+        // once per point rather than once per series - twelve hundred of them for
+        // a chart with four lines on it.
+        let keyed = Array(zip(trackedKeys, names))
+        let points = samples.flatMap { sample -> [SeriesPoint] in
+            let date = Date(timeIntervalSince1970: sample.t)
+            return keyed.compactMap { key, name -> SeriesPoint? in
                 guard let value = sample.temps[key] else { return nil }
-                return SeriesPoint(date: Date(timeIntervalSince1970: sample.t),
-                                   value: value,
-                                   series: SensorCatalog.info(for: key).name)
+                return SeriesPoint(date: date, value: value, series: name)
             }
         }
 
