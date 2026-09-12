@@ -3,7 +3,10 @@ import FanKit
 
 struct FansView: View {
     @Environment(DaemonClient.self) private var client
-    @State private var selected: Int = 0
+    /// Which fan the detail pane shows. Stored, so the overview can point the
+    /// screen at a particular fan before switching to it.
+    @AppStorage(FansView.selectedKey) private var selected: Int = 0
+    static let selectedKey = "fans.selected"
     @State private var showingSensorPicker = false
     @State private var hoveredFan: Int?
 

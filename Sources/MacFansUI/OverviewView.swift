@@ -5,6 +5,8 @@ import FanKit
 struct OverviewView: View {
     @Environment(DaemonClient.self) private var client
     @State private var window: TimeWindow = .fifteen
+    @AppStorage(Screen.storageKey) private var screen: Screen = .overview
+    @AppStorage(FansView.selectedKey) private var selectedFan: Int = 0
 
     enum TimeWindow: Int, CaseIterable, Identifiable {
         case five = 300, fifteen = 900, thirty = 1800
@@ -111,7 +113,13 @@ struct OverviewView: View {
         let accent: Color = refused ? Palette.critical
                                     : controlled ? Palette.calm : Palette.ink.opacity(0.66)
 
-        return HStack(spacing: 7) {
+        // The chip is the way into that fan's settings: one click lands on the
+        // Fans screen with this fan already selected.
+        return Button {
+            selectedFan = fan.index
+            screen = .fans
+        } label: {
+          HStack(spacing: 7) {
             if refused {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 9.5, weight: .semibold))
@@ -134,7 +142,11 @@ struct OverviewView: View {
                     refused ? Palette.critical.opacity(0.35)
                     : controlled ? Palette.calm.opacity(0.32) : Palette.ink.opacity(0.14),
                     lineWidth: 0.5))
-        )
+          )
+          .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(L10n.t("Открыть настройки вентилятора", "Open this fan's settings"))
     }
 
     private func subtitle(for fan: FanReading) -> String {
