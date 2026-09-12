@@ -3,6 +3,7 @@ import FanKit
 
 struct SettingsView: View {
     @Environment(DaemonClient.self) private var client
+    @Environment(DaemonInstaller.self) private var installer
     @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
     @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
 
@@ -16,139 +17,144 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            Group {
-                VStack(alignment: .leading, spacing: 18) {
-                    if let config = configBinding() {
-                        safetyCard(config)
-                        samplingCard(config)
-                    }
-                    appearanceCard
-                    panicCard
-                    aboutCard
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 30), GridItem(.flexible())],
+                      alignment: .leading, spacing: 30) {
+                if let config = configBinding() {
+                    safety(config).riseIn(0.02)
+                } else {
+                    daemonMissing.riseIn(0.02)
                 }
+                glass.riseIn(0.08)
+                daemon.riseIn(0.14)
+                panic.riseIn(0.20)
             }
-            .padding(22)
+            .padding(.horizontal, 30)
+            .padding(.top, 22)
+            .padding(.bottom, 26)
         }
         .scrollContentBackground(.hidden)
     }
 
-    private func safetyCard(_ config: Binding<AppConfig>) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(L10n.t("Безопасность", "Safety"), systemImage: "shield")
-                .font(.headline)
-            HStack {
-                Text(L10n.t("Аварийный порог", "Emergency threshold"))
-                Spacer()
-                Text(Format.temperatureFine(config.wrappedValue.emergencyTemp)).monospacedDigit()
-            }
-            Slider(value: config.emergencyTemp, in: AppConfig.emergencyRange, step: 1)
-            Text(L10n.t("Выше этой температуры кривая игнорируется и вентиляторы уходят на максимум.",
-                        "Above this the curve is abandoned and the fans go to full speed."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private func safety(_ config: Binding<AppConfig>) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SectionCaption(text: L10n.t("Безопасность", "Safety"))
+            LabelledSlider(
+                title: L10n.t("Аварийный порог", "Emergency threshold"),
+                valueText: Format.temperatureFine(config.wrappedValue.emergencyTemp),
+                value: config.emergencyTemp,
+                range: AppConfig.emergencyRange,
+                step: 1,
+                footnote: L10n.t("Выше этой температуры кривая игнорируется и вентиляторы уходят на максимум.",
+                                 "Above this the curve is abandoned and the fans go to full speed."),
+                tint: Palette.heat
+            )
+            LabelledSlider(
+                title: L10n.t("Интервал опроса", "Sampling interval"),
+                valueText: String(format: "%.2f с", config.wrappedValue.pollInterval),
+                value: config.pollInterval,
+                range: AppConfig.pollRange,
+                step: 0.25
+            )
         }
-        .glassCard()
     }
 
-    private func samplingCard(_ config: Binding<AppConfig>) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(L10n.t("Опрос", "Sampling"), systemImage: "timer")
-                .font(.headline)
-            HStack {
-                Text(L10n.t("Интервал", "Interval"))
-                Spacer()
-                Text(String(format: "%.2f c", config.wrappedValue.pollInterval)).monospacedDigit()
-            }
-            Slider(value: config.pollInterval, in: AppConfig.pollRange, step: 0.25)
+    private var daemonMissing: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionCaption(text: L10n.t("Безопасность", "Safety"))
+            Text(L10n.t("Настройки появятся, когда демон будет установлен.",
+                        "These appear once the daemon is installed."))
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.4))
         }
-        .glassCard()
     }
 
-    private var appearanceCard: some View {
+    private var glass: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SectionCaption(text: L10n.t("Стекло", "Glass"))
+            LabelledSlider(
+                title: L10n.t("Матовость", "Frost"),
+                valueText: "\(Int(frost * 100)) %",
+                value: $frost, range: GlassStyle.frostRange, step: nil
+            )
+            LabelledSlider(
+                title: L10n.t("Тон", "Tone"),
+                valueText: tint == 0 ? L10n.t("ровно", "neutral") : String(format: "%+.0f %%", tint * 100),
+                value: $tint, range: GlassStyle.tintRange, step: nil,
+                footnote: L10n.t("Регулирует подложку окна. Карточки всегда прозрачные.",
+                                 "Adjusts the window backing. The cards stay clear.")
+            )
+        }
+    }
+
+    private var daemon: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(L10n.t("Стекло", "Glass"), systemImage: "sparkles")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(L10n.t("Матовость", "Frost"))
-                    Spacer()
-                    Text("\(Int(frost * 100)) %").monospacedDigit().foregroundStyle(.secondary)
+            SectionCaption(text: L10n.t("Управление вентиляторами", "Fan control"))
+            switch installer.status {
+            case .installed:
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color(red: 0.20, green: 0.79, blue: 0.54))
+                    Text(L10n.t("Установлено · запускается вместе с системой",
+                                "Installed · starts with the system"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.88))
                 }
-                Slider(value: $frost, in: GlassStyle.frostRange)
-                HStack {
-                    Text(L10n.t("прозрачное", "clear"))
-                    Spacer()
-                    Text(L10n.t("матовое", "frosted"))
+                HStack(spacing: 10) {
+                    Button(L10n.t("Переустановить", "Reinstall")) { installer.install() }
+                        .buttonStyle(.glass)
+                    Button(L10n.t("Удалить", "Remove")) { installer.uninstall() }
+                        .buttonStyle(.glass)
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(L10n.t("Тон", "Tone"))
-                    Spacer()
-                    Text(tint == 0 ? L10n.t("нейтральный", "neutral")
-                                   : String(format: "%+.0f %%", tint * 100))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+            case .working:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.t("Выполняю…", "Working…"))
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
                 }
-                Slider(value: $tint, in: GlassStyle.tintRange)
-                HStack {
-                    Text(L10n.t("темнее", "darker"))
-                    Spacer()
-                    Text(L10n.t("светлее", "lighter"))
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Text(L10n.t("Регулирует только подложку окна. Карточки всегда максимально прозрачные.",
-                            "Adjusts the window backing only. The cards stay as clear as glass gets."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(L10n.t("Сбросить", "Reset")) {
-                    frost = GlassStyle.defaultFrost
-                    tint = GlassStyle.defaultTint
-                }
-                .buttonStyle(.glass)
-                .controlSize(.small)
+            case .failed(let message):
+                Text(message).font(.system(size: 11.5)).foregroundStyle(Palette.critical)
+                Button(L10n.t("Повторить", "Try again")) { installer.install() }
+                    .buttonStyle(.glassProminent)
+            case .notInstalled:
+                Text(L10n.t("Не установлено. Без этого приложение только показывает температуры.",
+                            "Not installed. Without it the app only shows temperatures."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(L10n.t("Установить", "Install")) { installer.install() }
+                    .buttonStyle(.glassProminent)
             }
         }
-        .glassCard()
     }
 
-    private var panicCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(L10n.t("Вернуть управление системе", "Hand control back"), systemImage: "arrow.uturn.backward")
-                .font(.headline)
-            Text(L10n.t("Переводит все вентиляторы в авто и сбрасывает режимы. Пригодится, если что-то пошло не так.",
-                        "Puts every fan back on auto and clears the modes. For when something looks wrong."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button(L10n.t("Отпустить все вентиляторы", "Release all fans")) {
+    private var panic: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionCaption(text: L10n.t("Если что-то пошло не так", "If something looks wrong"))
+            Text(L10n.t("Переводит все вентиляторы в авто и сбрасывает режимы — управление возвращается системе.",
+                        "Puts every fan back on auto and clears the modes; the system takes over."))
+                .font(.system(size: 11.5))
+                .foregroundStyle(.white.opacity(0.4))
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
                 client.releaseAll()
+            } label: {
+                Label(L10n.t("Отпустить все вентиляторы", "Release all fans"),
+                      systemImage: "arrow.uturn.backward")
             }
             .buttonStyle(.glassProminent)
             .tint(Palette.critical)
-        }
-        .glassCard()
-    }
 
-    private var aboutCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(L10n.t("О программе", "About"), systemImage: "info.circle")
-                .font(.headline)
-            LabeledContent(L10n.t("Демон", "Daemon"),
-                           value: client.snapshot?.daemonVersion ?? "—")
-            LabeledContent(L10n.t("Датчиков найдено", "Sensors found"),
-                           value: "\(client.snapshot?.sensors.count ?? 0)")
-            LabeledContent(L10n.t("Вентиляторов", "Fans"),
-                           value: "\(client.snapshot?.fans.count ?? 0)")
+            HStack(spacing: 22) {
+                Text(L10n.t("Демон \(client.snapshot?.daemonVersion ?? "—")",
+                            "Daemon \(client.snapshot?.daemonVersion ?? "—")"))
+                Text(L10n.t("\(client.snapshot?.sensors.count ?? 0) датчиков",
+                            "\(client.snapshot?.sensors.count ?? 0) sensors"))
+                Text(L10n.t("\(client.snapshot?.fans.count ?? 0) вентилятора",
+                            "\(client.snapshot?.fans.count ?? 0) fans"))
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.white.opacity(0.28))
+            .padding(.top, 6)
         }
-        .glassCard()
     }
 }

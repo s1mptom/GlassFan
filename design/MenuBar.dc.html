@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; }
+    a { color: #7fb4f2; } a:hover { color: #a8cdf7; }
+    .num { font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes drop { from { opacity: 0; transform: translateY(-10px) scale(.97); } to { opacity: 1; transform: none; } }
+    .blades { transform-origin: 50% 50%; animation: spin 1.9s linear infinite; }
+    .blades-slow { transform-origin: 50% 50%; animation: spin 3.4s linear infinite; }
+    .drop { animation: drop .45s cubic-bezier(.22,.9,.3,1) both; transform-origin: 50% 0; }
+  </style>
+</helmet>
+
+<div style="width: 420px; height: 500px; position: relative; overflow: hidden;
+            background: linear-gradient(150deg, #12203a 0%, #0c1322 55%, #17102a 100%);">
+
+  <div style="position: absolute; left: 0; right: 0; top: 0; height: 26px; display: flex;
+              align-items: center; justify-content: flex-end; gap: 16px; padding: 0 14px;
+              background: rgba(255,255,255,.07); border-bottom: .5px solid rgba(255,255,255,.09);">
+    <div class="num" style="display: flex; align-items: center; gap: 5px; color: #fff; font-size: 11.5px;">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 10c0-2.6.9-4.5 3-4.5 1.6 0 2.5 1.5 1.6 3-.9 1.5-2.8 1.5-4.6 1.5z"/><path d="M14 12c2.6 0 4.5.9 4.5 3 0 1.6-1.5 2.5-3 1.6-1.5-.9-1.5-2.8-1.5-4.6z"/><path d="M12 14c0 2.6-.9 4.5-3 4.5-1.6 0-2.5-1.5-1.6-3 .9-1.5 2.8-1.5 4.6-1.5z"/><path d="M10 12c-2.6 0-4.5-.9-4.5-3 0-1.6 1.5-2.5 3-1.6 1.5.9 1.5 2.8 1.5 4.6z"/></svg>
+      78° · 2600
+    </div>
+    <span style="color: rgba(255,255,255,.55); font-size: 11.5px;">Сб 12 сен  01:24</span>
+  </div>
+
+  <div class="drop" style="position: absolute; left: 42px; right: 42px; top: 36px;
+              border-radius: 18px; overflow: hidden; padding: 16px;
+              display: flex; flex-direction: column; gap: 15px;
+              background: rgba(16,19,28,.55); backdrop-filter: blur(38px) saturate(180%);
+              -webkit-backdrop-filter: blur(38px) saturate(180%);
+              border: .5px solid rgba(255,255,255,.16);
+              box-shadow: 0 26px 60px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.14) inset;">
+
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span style="color: #fff; font-size: 14px; font-weight: 600;">MacFans</span>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="width: 6px; height: 6px; border-radius: 50%; background: #34c98a; box-shadow: 0 0 8px rgba(52,201,138,.9);"></div>
+        <span style="color: rgba(255,255,255,.45); font-size: 11px;">на связи</span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 12px;">
+      <div style="flex-grow: 1; display: flex; align-items: center; gap: 11px; padding: 11px 12px;
+                  border-radius: 14px; background: rgba(255,255,255,.07); border: .5px solid rgba(255,255,255,.12);">
+        <div style="position: relative; width: 40px; height: 40px; flex: none;">
+          <svg width="40" height="40" viewBox="0 0 40 40" style="position: absolute; inset: 0;">
+            <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="2.5" stroke-dasharray="80 27" transform="rotate(125 20 20)"/>
+            <circle cx="20" cy="20" r="17" fill="none" stroke="#5aa2f0" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="39 68" transform="rotate(125 20 20)"/>
+          </svg>
+          <svg width="40" height="40" viewBox="0 0 40 40" style="position: absolute; inset: 0;">
+            <g class="blades" opacity=".2">
+              <path d="M20 20 C20 13 17 9 20 7 C23 9 20 13 20 20Z" fill="#cfe6ff"/>
+              <path d="M20 20 C27 20 31 17 33 20 C31 23 27 20 20 20Z" fill="#cfe6ff"/>
+              <path d="M20 20 C20 27 23 31 20 33 C17 31 20 27 20 20Z" fill="#cfe6ff"/>
+              <path d="M20 20 C13 20 9 23 7 20 C9 17 13 20 20 20Z" fill="#cfe6ff"/>
+            </g>
+          </svg>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <span style="color: rgba(255,255,255,.5); font-size: 10px;">Вентилятор 1</span>
+          <span class="num" style="color: #fff; font-size: 17px; font-weight: 600;">2600</span>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1; display: flex; align-items: center; gap: 11px; padding: 11px 12px;
+                  border-radius: 14px; background: rgba(255,255,255,.07); border: .5px solid rgba(255,255,255,.12);">
+        <div style="position: relative; width: 40px; height: 40px; flex: none;">
+          <svg width="40" height="40" viewBox="0 0 40 40" style="position: absolute; inset: 0;">
+            <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="2.5" stroke-dasharray="80 27" transform="rotate(125 20 20)"/>
+            <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,.42)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="17 90" transform="rotate(125 20 20)"/>
+          </svg>
+          <svg width="40" height="40" viewBox="0 0 40 40" style="position: absolute; inset: 0;">
+            <g class="blades-slow" opacity=".14">
+              <path d="M20 20 C20 13 17 9 20 7 C23 9 20 13 20 20Z" fill="#e6eef8"/>
+              <path d="M20 20 C27 20 31 17 33 20 C31 23 27 20 20 20Z" fill="#e6eef8"/>
+              <path d="M20 20 C20 27 23 31 20 33 C17 31 20 27 20 20Z" fill="#e6eef8"/>
+              <path d="M20 20 C13 20 9 23 7 20 C9 17 13 20 20 20Z" fill="#e6eef8"/>
+            </g>
+          </svg>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <span style="color: rgba(255,255,255,.5); font-size: 10px;">Вентилятор 2</span>
+          <span class="num" style="color: rgba(255,255,255,.88); font-size: 17px; font-weight: 600;">1654</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; padding: 3px; gap: 2px; border-radius: 10px;
+                background: rgba(255,255,255,.06); border: .5px solid rgba(255,255,255,.1);">
+      <div style="flex-grow: 1; text-align: center; padding: 6px 0; border-radius: 7px;
+                  color: rgba(255,255,255,.55); font-size: 11.5px;">Авто</div>
+      <div style="flex-grow: 1; text-align: center; padding: 6px 0; border-radius: 7px;
+                  color: rgba(255,255,255,.55); font-size: 11.5px;">Фикс</div>
+      <div style="flex-grow: 1; text-align: center; padding: 6px 0; border-radius: 7px; color: #fff;
+                  font-size: 11.5px; font-weight: 560; background: rgba(255,255,255,.16);
+                  box-shadow: 0 .5px 0 rgba(255,255,255,.2) inset;">Кривая</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="color: rgba(255,255,255,.75); font-size: 11.5px; width: 128px;">CPU, горячая точка</span>
+        <div style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08);">
+          <div style="width: 72%; height: 100%; border-radius: 2px; background: #ff8a5c;"></div>
+        </div>
+        <span class="num" style="color: #fff; font-size: 11.5px; width: 46px; text-align: right;">78.5°</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="color: rgba(255,255,255,.75); font-size: 11.5px; width: 128px;">Ядро CPU</span>
+        <div style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08);">
+          <div style="width: 64%; height: 100%; border-radius: 2px; background: #ff8a5c;"></div>
+        </div>
+        <span class="num" style="color: #fff; font-size: 11.5px; width: 46px; text-align: right;">69.1°</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="color: rgba(255,255,255,.75); font-size: 11.5px; width: 128px;">Корпус</span>
+        <div style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08);">
+          <div style="width: 22%; height: 100%; border-radius: 2px; background: #5aa2f0;"></div>
+        </div>
+        <span class="num" style="color: #fff; font-size: 11.5px; width: 46px; text-align: right;">37.0°</span>
+      </div>
+    </div>
+
+    <div style="height: .5px; background: rgba(255,255,255,.09);"></div>
+
+    <div style="display: flex; gap: 8px;">
+      <div style="flex-grow: 1; text-align: center; padding: 8px 0; border-radius: 10px; font-size: 12px;
+                  font-weight: 560; color: #fff; background: rgba(90,162,240,.28);
+                  border: .5px solid rgba(90,162,240,.45); box-shadow: 0 .5px 0 rgba(255,255,255,.18) inset;">Открыть окно</div>
+      <div style="width: 92px; text-align: center; padding: 8px 0; border-radius: 10px; font-size: 12px;
+                  color: rgba(255,255,255,.7); background: rgba(255,255,255,.07);
+                  border: .5px solid rgba(255,255,255,.12);">Выйти</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

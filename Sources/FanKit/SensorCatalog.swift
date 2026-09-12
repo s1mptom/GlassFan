@@ -16,6 +16,19 @@ public enum SensorGroup: String, Codable, Sendable, CaseIterable, Identifiable {
         }
     }
 
+    /// Short form for the headline row, where the column is narrow.
+    public var shortTitle: String {
+        switch self {
+        case .cpu:     return L10n.t("Процессор", "CPU")
+        case .gpu:     return L10n.t("Графика", "GPU")
+        case .comfort: return L10n.t("Корпус", "Chassis")
+        case .storage: return L10n.t("Диск", "Storage")
+        case .battery: return L10n.t("Батарея", "Battery")
+        case .power:   return L10n.t("Питание", "Power")
+        case .other:   return L10n.t("Прочее", "Other")
+        }
+    }
+
     public var symbol: String {
         switch self {
         case .cpu: return "cpu"

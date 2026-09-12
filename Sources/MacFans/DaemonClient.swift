@@ -21,9 +21,13 @@ final class DaemonClient {
     private var readerThread: Thread?
     private let historyLimit = 1800
 
-    /// Config being edited in the UI. Kept apart from the daemon's copy so typing in a
-    /// field is not fought by every incoming snapshot.
+    /// Optimistic overlay while an edit is in flight. The daemon stays the source of
+    /// truth: as soon as it confirms (or if it changes the config from elsewhere) the
+    /// overlay is dropped, so the UI can never drift away from what is actually running.
     var draftConfig: AppConfig?
+    /// The config last sent, awaiting confirmation.
+    private var pendingConfig: AppConfig?
+    private var pendingSince: Date?
 
     var config: AppConfig? { draftConfig ?? snapshot?.config }
 
@@ -113,8 +117,7 @@ final class DaemonClient {
             if history.count > historyLimit {
                 history.removeFirst(history.count - historyLimit)
             }
-            // Adopt the daemon's config once, so the UI starts from the real state.
-            if draftConfig == nil { draftConfig = snapshot.config }
+            reconcileConfig(with: snapshot.config)
 
         case .failure(let text):
             lastError = text
@@ -133,15 +136,41 @@ final class DaemonClient {
         }
     }
 
+    /// Reconciles the optimistic overlay against what the daemon reports.
+    private func reconcileConfig(with daemonConfig: AppConfig) {
+        guard let pending = pendingConfig else {
+            // Nothing in flight: the daemon's copy is the truth.
+            draftConfig = nil
+            return
+        }
+        if daemonConfig == pending {
+            pendingConfig = nil
+            pendingSince = nil
+            draftConfig = nil
+            return
+        }
+        // A change we never made, or a commit that went missing - either way the
+        // daemon wins rather than the UI showing a state nothing is in.
+        if let since = pendingSince, Date().timeIntervalSince(since) > 3 {
+            pendingConfig = nil
+            pendingSince = nil
+            draftConfig = nil
+        }
+    }
+
     /// Pushes the edited config to the daemon.
     func commit() {
         guard let config = draftConfig else { return }
+        pendingConfig = config
+        pendingSince = Date()
         send(.setConfig(config))
     }
 
     func releaseAll() {
         send(.releaseAll)
         draftConfig = nil
+        pendingConfig = nil
+        pendingSince = nil
     }
 
     // MARK: Convenience for views

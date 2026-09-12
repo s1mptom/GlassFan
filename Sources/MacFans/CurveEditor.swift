@@ -16,9 +16,9 @@ struct CurveEditor: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let plot = CGRect(x: 44, y: 10,
-                              width: max(geometry.size.width - 60, 10),
-                              height: max(geometry.size.height - 40, 10))
+            let plot = CGRect(x: 34, y: 8,
+                              width: max(geometry.size.width - 44, 10),
+                              height: max(geometry.size.height - 34, 10))
 
             ZStack(alignment: .topLeading) {
                 grid(in: plot)
@@ -34,7 +34,6 @@ struct CurveEditor: View {
                 onCommit()
             }
         }
-        .frame(height: 260)
     }
 
     // MARK: Geometry
@@ -60,18 +59,18 @@ struct CurveEditor: View {
 
     private func grid(in plot: CGRect) -> some View {
         Canvas { context, _ in
-            let gridColor = Color.secondary.opacity(0.14)
+            let line = Color.white.opacity(0.05)
             for temperature in stride(from: 40.0, through: 100.0, by: 20.0) {
                 let x = position(CurvePoint(temperature: temperature, rpm: limits.minRPM), in: plot).x
                 context.stroke(Path { $0.move(to: CGPoint(x: x, y: plot.minY))
                                       $0.addLine(to: CGPoint(x: x, y: plot.maxY)) },
-                               with: .color(gridColor), lineWidth: 1)
+                               with: .color(line), lineWidth: 1)
             }
             for fraction in stride(from: 0.0, through: 1.0, by: 0.25) {
                 let y = plot.maxY - plot.height * fraction
                 context.stroke(Path { $0.move(to: CGPoint(x: plot.minX, y: y))
                                       $0.addLine(to: CGPoint(x: plot.maxX, y: y)) },
-                               with: .color(gridColor), lineWidth: 1)
+                               with: .color(line), lineWidth: 1)
             }
         }
     }
@@ -94,19 +93,21 @@ struct CurveEditor: View {
             fill.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
             fill.closeSubpath()
             context.fill(fill, with: .linearGradient(
-                Gradient(colors: [Palette.calm.opacity(0.28), Palette.calm.opacity(0.02)]),
+                Gradient(colors: [Palette.calm.opacity(0.32), Palette.calm.opacity(0.02)]),
                 startPoint: CGPoint(x: plot.midX, y: plot.minY),
                 endPoint: CGPoint(x: plot.midX, y: plot.maxY)))
-            context.stroke(path, with: .color(Palette.calm), lineWidth: 2)
+            context.stroke(path, with: .color(Palette.calm), lineWidth: 2.5)
         }
     }
 
     private func handles(in plot: CGRect) -> some View {
         ForEach(Array(curve.points.enumerated()), id: \.offset) { index, point in
             Circle()
-                .fill(Palette.calm)
-                .overlay(Circle().stroke(.background, lineWidth: 2))
-                .frame(width: 12, height: 12)
+                .fill(Color(red: 0.04, green: 0.06, blue: 0.10))
+                .overlay(Circle().strokeBorder(Palette.calm, lineWidth: 2.5))
+                .frame(width: 13, height: 13)
+                .scaleEffect(dragging == index ? 1.25 : 1)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: dragging)
                 .position(position(point, in: plot))
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -131,17 +132,22 @@ struct CurveEditor: View {
             if let currentTemp, let currentRPM {
                 let marker = position(CurvePoint(temperature: currentTemp, rpm: currentRPM), in: plot)
                 Circle()
-                    .fill(Palette.series[1])
-                    .frame(width: 9, height: 9)
+                    .fill(Palette.heat)
+                    .frame(width: 11, height: 11)
+                    .overlay(Circle().strokeBorder(Palette.heat.opacity(0.25), lineWidth: 4))
+                    .shadow(color: Palette.heat.opacity(0.7), radius: 7)
                     .position(marker)
-                    .shadow(color: Palette.series[1].opacity(0.6), radius: 5)
-                Text(String(format: "%.0f° · %.0f rpm", currentTemp, currentRPM))
-                    .font(.caption2)
+                    .animation(.easeInOut(duration: 0.8), value: currentTemp)
+
+                Text(String(format: "%.0f° · %.0f", currentTemp, currentRPM))
+                    .font(.system(size: 11))
                     .monospacedDigit()
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
                     .glassSurface(cornerRadius: 999)
-                    .position(x: min(marker.x + 62, plot.maxX - 20), y: max(marker.y - 16, plot.minY + 10))
+                    .position(x: min(marker.x + 64, plot.maxX - 24), y: max(marker.y - 18, plot.minY + 12))
+                    .animation(.easeInOut(duration: 0.8), value: currentTemp)
             }
         }
     }
@@ -150,16 +156,17 @@ struct CurveEditor: View {
         ZStack(alignment: .topLeading) {
             ForEach([40.0, 60.0, 80.0, 100.0], id: \.self) { temperature in
                 Text("\(Int(temperature))°")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.3))
                     .position(x: position(CurvePoint(temperature: temperature, rpm: limits.minRPM), in: plot).x,
-                              y: plot.maxY + 14)
+                              y: plot.maxY + 13)
             }
             ForEach([0.0, 0.5, 1.0], id: \.self) { fraction in
                 Text("\(Int(limits.minRPM + fraction * (limits.maxRPM - limits.minRPM)))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .position(x: plot.minX - 22, y: plot.maxY - plot.height * fraction)
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.3))
+                    .position(x: plot.minX - 20, y: plot.maxY - plot.height * fraction)
             }
         }
     }

@@ -9,6 +9,13 @@ CONFIG="${1:-release}"
 cd "$ROOT"
 echo "==> Building ($CONFIG)"
 swift build -c "$CONFIG" --product MacFans
+swift build -c "$CONFIG" --product fanctld
+
+echo "==> Icon"
+if [[ ! -f build/AppIcon.icns ]]; then
+    swift Scripts/make-icon.swift >/dev/null
+    iconutil -c icns build/MacFans.iconset -o build/AppIcon.icns
+fi
 
 BIN="$ROOT/.build/$CONFIG/MacFans"
 [[ -x "$BIN" ]] || { echo "no binary produced"; exit 1; }
@@ -17,6 +24,15 @@ echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/MacFans"
+
+# Everything the app needs to install the daemon itself, so there is no separate
+# download and no terminal step.
+cp "$ROOT/.build/$CONFIG/fanctld"                    "$APP/Contents/Resources/fanctld"
+cp "$ROOT/Scripts/install-daemon.sh"                 "$APP/Contents/Resources/"
+cp "$ROOT/Scripts/uninstall-daemon.sh"               "$APP/Contents/Resources/"
+cp "$ROOT/Scripts/com.macfans.fanctld.plist"         "$APP/Contents/Resources/"
+cp "$ROOT/build/AppIcon.icns"                        "$APP/Contents/Resources/"
+chmod 755 "$APP/Contents/Resources/fanctld" "$APP/Contents/Resources/"*.sh
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -33,6 +49,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
 </dict>
 </plist>
 PLIST

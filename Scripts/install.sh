@@ -4,12 +4,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/Scripts/sudo-helper.sh"
 LABEL="com.macfans.fanctld"
 PLIST="/Library/LaunchDaemons/${LABEL}.plist"
 DEST="/usr/local/libexec/macfans"
 
 if [[ $EUID -eq 0 ]]; then
-    echo "Run this as your normal user, not with sudo - it will ask for the password itself."
+    echo "Run this as your normal user, not with sudo - it asks for the password itself."
     exit 1
 fi
 
@@ -26,7 +27,7 @@ if pgrep -f "$MFC_LABEL" >/dev/null 2>&1; then
     echo
     echo "==> Macs Fan Control's privileged helper is running and would fight this daemon."
     echo "    Stopping it (its files are left in place, so Macs Fan Control can restore it)."
-    sudo launchctl bootout system/"$MFC_LABEL" 2>/dev/null || true
+    run_root launchctl bootout system/"$MFC_LABEL" 2>/dev/null || true
     sleep 1
     if pgrep -f "$MFC_LABEL" >/dev/null 2>&1; then
         echo "    Could not stop it. Quit Macs Fan Control and run this again."
@@ -37,7 +38,7 @@ fi
 
 echo
 echo "==> Hardware self-test (fan 0 will get loud for about 10 seconds)"
-if sudo "$BIN" --selftest; then
+if run_root "$BIN" --selftest; then
     echo "Self-test passed."
 else
     echo
@@ -47,21 +48,21 @@ fi
 
 echo
 echo "==> Installing to $DEST"
-sudo mkdir -p "$DEST"
-sudo cp "$BIN" "$DEST/fanctld"
-sudo chown root:wheel "$DEST/fanctld"
-sudo chmod 755 "$DEST/fanctld"
+run_root mkdir -p "$DEST"
+run_root cp "$BIN" "$DEST/fanctld"
+run_root chown root:wheel "$DEST/fanctld"
+run_root chmod 755 "$DEST/fanctld"
 
-sudo cp "$ROOT/Scripts/${LABEL}.plist" "$PLIST"
-sudo chown root:wheel "$PLIST"
-sudo chmod 644 "$PLIST"
+run_root cp "$ROOT/Scripts/${LABEL}.plist" "$PLIST"
+run_root chown root:wheel "$PLIST"
+run_root chmod 644 "$PLIST"
 
 echo "==> Loading the daemon"
-sudo launchctl bootout system/"$LABEL" 2>/dev/null || true
-sudo launchctl bootstrap system "$PLIST"
+run_root launchctl bootout system/"$LABEL" 2>/dev/null || true
+run_root launchctl bootstrap system "$PLIST"
 sleep 2
 
-if sudo launchctl print system/"$LABEL" >/dev/null 2>&1; then
+if run_root launchctl print system/"$LABEL" >/dev/null 2>&1; then
     echo "Daemon is running."
     echo
     echo "Socket: $(ls -l /var/run/macfans.sock 2>/dev/null || echo 'not created yet')"

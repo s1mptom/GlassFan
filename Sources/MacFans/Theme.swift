@@ -44,6 +44,11 @@ enum Palette {
     static let warning = Color.adaptive(light: "#eda100", dark: "#c98500")
     static let critical = Color.adaptive(light: "#e34948", dark: "#e66767")
     static let calm = Color.adaptive(light: "#2a78d6", dark: "#3987e5")
+
+    /// Warm accent for a single hot number. Deliberately NOT a chart series colour:
+    /// it is lighter than the validated steps and would collide with the aqua series
+    /// for red-blind viewers if it ever carried identity.
+    static let heat = Color.adaptive(light: "#e0662f", dark: "#ff8a5c")
 }
 
 extension View {

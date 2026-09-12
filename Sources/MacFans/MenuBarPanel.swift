@@ -4,96 +4,124 @@ import FanKit
 /// The compact panel behind the menu bar item: state at a glance and the mode switch.
 struct MenuBarPanel: View {
     @Environment(DaemonClient.self) private var client
+    @Environment(DaemonInstaller.self) private var installer
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Group {
-            VStack(alignment: .leading, spacing: 14) {
-                header
+        VStack(alignment: .leading, spacing: 15) {
+            header
 
-                if client.isConnected {
-                    ForEach(client.snapshot?.fans ?? []) { fan in
-                        fanRow(fan)
-                    }
-                    Divider().opacity(0.4)
-                    hottestSensors
-                } else {
-                    Text(client.lastError ?? L10n.t("Демон не запущен", "Daemon is not running"))
-                        .font(.callout)
-                        .foregroundStyle(Palette.critical)
-                    Text(L10n.t("Запусти Scripts/install.sh, чтобы поставить демона.",
-                                "Run Scripts/install.sh to install the daemon."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Button(L10n.t("Открыть окно", "Open window")) { openWindow(id: "main") }
-                        .buttonStyle(.glassProminent)
-                    Spacer()
-                    Button(L10n.t("Выйти", "Quit")) { NSApplication.shared.terminate(nil) }
-                        .buttonStyle(.glass)
-                }
+            if client.isConnected {
+                fanRow
+                modeSwitch
+                hottestSensors
+                Divider().overlay(.white.opacity(0.09))
+            } else {
+                notRunning
             }
-            .padding(16)
-            .frame(width: 320)
+
+            HStack(spacing: 8) {
+                Button(L10n.t("Открыть окно", "Open window")) { openWindow(id: "main") }
+                    .buttonStyle(.glassProminent)
+                    .frame(maxWidth: .infinity)
+                Button(L10n.t("Выйти", "Quit")) { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.glass)
+                    .frame(width: 84)
+            }
         }
+        .padding(16)
+        .frame(width: 336)
+        .preferredColorScheme(.dark)
     }
 
     private var header: some View {
         HStack {
-            Label("MacFans", systemImage: "fan.fill").font(.headline)
+            Text("MacFans").font(.system(size: 14, weight: .semibold))
             Spacer()
-            if let hottest = client.hottest {
-                Text(Format.temperatureFine(hottest.value))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                LiveDot(active: client.isConnected)
+                Text(client.isConnected ? L10n.t("на связи", "connected")
+                                        : L10n.t("нет связи", "offline"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.45))
             }
         }
     }
 
-    private func fanRow(_ fan: FanReading) -> some View {
-        let binding = Binding<FanMode>(
-            get: { client.config?.fans.first { $0.id == fan.index }?.mode ?? .auto },
+    private var fanRow: some View {
+        HStack(spacing: 12) {
+            ForEach(client.snapshot?.fans ?? []) { fan in
+                HStack(spacing: 11) {
+                    FanDial(rpm: fan.actualRPM, limits: fan.limits, controlled: fan.forced,
+                            size: 40, showsCaption: false)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(L10n.t("Вент. \(fan.index + 1)", "Fan \(fan.index + 1)"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text(Format.rpm(fan.actualRPM))
+                            .font(.system(size: 17, weight: .semibold))
+                            .monospacedDigit()
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.white.opacity(0.07))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+                )
+            }
+        }
+    }
+
+    /// Switches every fan at once - the panel is for a quick decision, not per-fan work.
+    private var modeSwitch: some View {
+        let current = Binding<FanMode>(
+            get: { client.config?.fans.first?.mode ?? .auto },
             set: { newMode in
-                guard var config = client.draftConfig ?? client.snapshot?.config,
-                      let index = config.fans.firstIndex(where: { $0.id == fan.index }) else { return }
-                config.fans[index].mode = newMode
+                guard var config = client.draftConfig ?? client.snapshot?.config else { return }
+                for index in config.fans.indices { config.fans[index].mode = newMode }
                 client.draftConfig = config
                 client.commit()
             }
         )
-
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(L10n.t("Вентилятор \(fan.index + 1)", "Fan \(fan.index + 1)"))
-                    .font(.subheadline)
-                Spacer()
-                Text(Format.rpm(fan.actualRPM) + " rpm")
-                    .monospacedDigit()
-                    .font(.subheadline.weight(.medium))
-            }
-            Picker("", selection: binding) {
-                Text(L10n.t("Авто", "Auto")).tag(FanMode.auto)
-                Text(L10n.t("Фикс", "Fixed")).tag(FanMode.fixed)
-                Text(L10n.t("Кривая", "Curve")).tag(FanMode.curve)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-        }
+        return GlassSegmented(
+            items: [
+                .init(value: FanMode.auto, title: L10n.t("Авто", "Auto")),
+                .init(value: FanMode.fixed, title: L10n.t("Фикс", "Fixed")),
+                .init(value: FanMode.curve, title: L10n.t("Кривая", "Curve")),
+            ],
+            selection: current,
+            segmentWidth: 84,
+            fontSize: 11.5
+        )
     }
 
     private var hottestSensors: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(topSensors, id: \.key) { sensor in
-                HStack {
+        VStack(spacing: 8) {
+            ForEach(topSensors) { sensor in
+                HStack(spacing: 10) {
                     Text(SensorCatalog.info(for: sensor.key).name)
-                        .font(.caption)
-                    Spacer()
-                    Text(Format.temperatureFine(sensor.value))
-                        .font(.caption)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .frame(width: 124, alignment: .leading)
+                        .lineLimit(1)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.08))
+                            Capsule()
+                                .fill(sensor.value > 70 ? Palette.heat : Palette.calm)
+                                .frame(width: max(geometry.size.width
+                                                  * min(max((sensor.value - 20) / 80, 0), 1), 3))
+                        }
+                    }
+                    .frame(height: 3)
+                    Text(Format.temperature(sensor.value))
+                        .font(.system(size: 11.5))
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .frame(width: 42, alignment: .trailing)
                 }
             }
         }
@@ -101,5 +129,18 @@ struct MenuBarPanel: View {
 
     private var topSensors: [SensorReading] {
         Array((client.snapshot?.sensors ?? []).sorted { $0.value > $1.value }.prefix(3))
+    }
+
+    private var notRunning: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.t("Управление не установлено", "Fan control is not installed"))
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Palette.heat)
+            Text(L10n.t("Открой окно и нажми «Установить» — macOS спросит пароль.",
+                        "Open the window and press Install; macOS will ask for your password."))
+                .font(.system(size: 11.5))
+                .foregroundStyle(.white.opacity(0.45))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

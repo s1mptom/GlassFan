@@ -10,7 +10,7 @@ enum GlassStyle {
     static let tintKey = "glassTint"
 
     /// 0 leaves the window a clear pane; 1 frosts it right over.
-    static let defaultFrost = 0.35
+    static let defaultFrost = 0.62
     /// Negative darkens, positive lightens, 0 leaves the material as the system draws it.
     static let defaultTint = 0.0
 
