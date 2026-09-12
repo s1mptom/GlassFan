@@ -38,13 +38,18 @@ struct GlassSegmented<Value: Hashable>: View {
                     .padding(.vertical, 6)
                     .background {
                         if isSelected {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Palette.ink.opacity(0.16))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(Palette.ink.opacity(0.18), lineWidth: 0.5)
-                                )
-                                .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+                            // The system's own glass, not a painted chip: it brings
+                            // the highlight, the depth and the press response the
+                            // rest of Liquid Glass has, and the slide between
+                            // segments is still the matched geometry.
+                            //
+                            // No GlassEffectContainer around it on purpose. The
+                            // container merges neighbouring glass and re-solves
+                            // that merge on every press, which is what used to
+                            // shove the content next to a pressed button.
+                            Color.clear
+                                .glassEffect(.regular.interactive(),
+                                             in: .rect(cornerRadius: 9, style: .continuous))
                                 .matchedGeometryEffect(id: "selection", in: namespace)
                         }
                     }
