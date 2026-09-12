@@ -2,6 +2,11 @@ import SwiftUI
 import FanKit
 
 /// The compact panel behind the menu bar item: state at a glance and the mode switch.
+///
+/// Unlike the window, this one takes the system's appearance as it finds it. Its
+/// backing is the popover material macOS draws, which follows that appearance, so
+/// pinning the panel to dark while the material went light left dark ink on a light
+/// ground - or white ink on it, before the ink became semantic.
 struct MenuBarPanel: View {
     @Environment(DaemonClient.self) private var client
     @Environment(DaemonInstaller.self) private var installer
@@ -31,7 +36,6 @@ struct MenuBarPanel: View {
         }
         .padding(16)
         .frame(width: 336)
-        .preferredColorScheme(.dark)
     }
 
     private var header: some View {

@@ -18,10 +18,21 @@ struct OverviewView: View {
         }
     }
 
-    private var trackedKeys: [String] {
+    /// As many as the palette has distinct, validated steps for. Past that a series
+    /// would have to reuse a colour, and two lines the same colour is worse than a
+    /// line not drawn - so the extras are left off and said out loud instead.
+    private var chartableKeys: [String] {
         let keys = client.config?.trackedSensors ?? SensorCatalog.defaultTracked
         let available = Set((client.snapshot?.sensors ?? []).map(\.key))
-        return Array(keys.filter(available.contains).prefix(4))
+        return keys.filter(available.contains)
+    }
+
+    private var trackedKeys: [String] {
+        Array(chartableKeys.prefix(Palette.series.count))
+    }
+
+    private var overflowCount: Int {
+        max(chartableKeys.count - Palette.series.count, 0)
     }
 
     private var samples: [HistorySample] {
@@ -171,6 +182,13 @@ struct OverviewView: View {
         }
     }
 
+    private var legendTrailing: String {
+        let window = L10n.t("°C · последние \(self.window.title)", "°C · last \(self.window.title)")
+        guard overflowCount > 0 else { return window }
+        return L10n.t("\(window) · ещё \(overflowCount) не поместилось",
+                      "\(window) · \(overflowCount) more won't fit")
+    }
+
     /// Warm only where it means something; everything cool stays neutral so the hot
     /// number is the one that catches the eye.
     private func heatColor(_ temperature: Double) -> Color {
@@ -204,7 +222,7 @@ struct OverviewView: View {
                 }
                 ChartLegend(names: names,
                             values: trackedKeys.map { client.reading(for: $0) },
-                            trailing: L10n.t("°C · последние \(window.title)", "°C · last \(window.title)")) {
+                            trailing: legendTrailing) {
                     Format.temperature($0)
                 }
             }

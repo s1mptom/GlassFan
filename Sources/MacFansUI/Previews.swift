@@ -48,6 +48,15 @@ private struct PreviewShell: View {
 
 #Preview("Daemon missing") { PreviewShell(.overview, connected: false) }
 
+/// The popover behind the plus in Curve sensors, which has no other way to be seen
+/// short of clicking into it.
+#Preview("Sensor picker") {
+    @Previewable @State var selection = ["TCMz", "TaRT"]
+    return SensorPicker(selection: $selection)
+        .environment(DaemonClient.demo())
+        .frame(width: 360, height: 420)
+}
+
 #Preview("Menu bar") {
     MenuBarPanel()
         .environment(DaemonClient.demo())

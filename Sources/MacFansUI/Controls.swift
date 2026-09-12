@@ -50,6 +50,9 @@ struct GlassSegmented<Value: Hashable>: View {
                             selection = item.value
                         }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(item.title)
+                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(3)
