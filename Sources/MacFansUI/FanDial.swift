@@ -50,35 +50,6 @@ struct FanBlades: Shape {
     }
 }
 
-/// Where the blades have turned to, integrated frame by frame.
-///
-/// The angle used to be `timeIntervalSinceReferenceDate * rate`, which is the bug
-/// that made the dial stutter. That reference date is some 8.1e8 seconds ago, so
-/// the rate is multiplied by an enormous number: changing it by one rpm rewrites
-/// the whole product and moves the blades about 10 degrees at random, and by ten
-/// rpm about 99 degrees. A reading arrives every second, so once a second the
-/// blades teleported - forwards or backwards - by up to forty-five frames' worth
-/// of rotation. Real motion at 2600 rpm is 2.17 degrees per frame.
-///
-/// Advancing by `rate * elapsed` instead means a change of rate changes only what
-/// happens next, which is what the old comment claimed and did not do.
-@MainActor
-final class BladeSpin {
-    private(set) var angle: Double = 0
-    private var last: Date?
-
-    func advance(to now: Date, rate: Double) -> Double {
-        defer { last = now }
-        guard let last else { return angle }
-        // A hidden window, a sleeping machine or a paused preview can hand back a
-        // gap of seconds. Spinning through all of it at once would look like the
-        // very glitch this is here to remove, so a frame is a frame.
-        let elapsed = min(max(now.timeIntervalSince(last), 0), 1.0 / 20)
-        angle = (angle + rate * elapsed).truncatingRemainder(dividingBy: 360)
-        return angle
-    }
-}
-
 /// The fan gauge: an arc for how fast it is turning, blades that turn at a speed
 /// proportional to the rpm, and the number in the middle.
 struct FanDial: View {
@@ -106,15 +77,26 @@ struct FanDial: View {
     private static let speedSteps = 10
     private static let topSpinRate: Double = 300
 
-    @State private var spin = BladeSpin()
     private var visibility = WindowVisibility.shared
+    @Environment(\.colorScheme) private var scheme
+    @State private var discImage: CGImage?
 
     /// Share of the fan's top speed, not of the span above its minimum: measured from
     /// the minimum, an idling fan fills under one percent of the arc and the dial reads
     /// as broken.
+    ///
+    /// Computed from the rpm rounded to twenty. A real fan's reading wanders by a
+    /// few rpm every second, and every wander re-launched the arc's spring; a
+    /// spring most of a second long re-launched every second is an animation that
+    /// never stops - and every frame of it is a display cycle for the window, in
+    /// which AppKit lays out whatever is dirty. On the overview that is Swift
+    /// Charts, which is not cheap to lay out, a hundred and twenty times a second,
+    /// on account of a dial moving by one part in five thousand. With the window
+    /// closed, too.
     private var fraction: Double {
         guard rpm > 0, limits.maxRPM > 0 else { return 0 }
-        return min(max(rpm / limits.maxRPM, 0), 1)
+        let settled = (rpm / 50).rounded() * 50
+        return min(max(settled / limits.maxRPM, 0), 1)
     }
 
     /// Which of the ten speeds this reading falls in. Zero only when the fan has
@@ -146,23 +128,6 @@ struct FanDial: View {
         rpm <= 0 ? 0.07 : 0.16
     }
 
-    /// Linear, not angular.
-    ///
-    /// An `AngularGradient` shades per pixel through `atan2`, and the spinning
-    /// blades make the whole window's backing store redraw every frame, so
-    /// everything drawn beside them - this arc included - was being re-shaded
-    /// sixty times a second. A profile put the conic shader at about a third of
-    /// all main-thread work. Across a three-quarter arc a diagonal sweep is
-    /// indistinguishable from a radial one, and it costs an interpolation.
-    private var arcStyle: AnyShapeStyle {
-        if alert { return AnyShapeStyle(Palette.critical) }
-        return controlled
-            ? AnyShapeStyle(LinearGradient(
-                colors: [Palette.calm, Palette.series[2]],
-                startPoint: .bottomLeading, endPoint: .topTrailing))
-            : AnyShapeStyle(Palette.ink.opacity(0.42))
-    }
-
     var body: some View {
         ZStack {
             track
@@ -191,42 +156,66 @@ struct FanDial: View {
             .rotationEffect(.degrees(135))
     }
 
+    /// The speed arc, drawn and animated by Core Animation.
+    ///
+    /// It was a SwiftUI shape with `.animation(.smooth)` on its trim. That kept
+    /// the shape in an animation that never quite settled, and a shape in
+    /// flight is re-rasterised by CoreGraphics on every frame - a gradient
+    /// stroke, twice, at the display's refresh rate. Measured with the disc
+    /// paused and the chart off: 15.9% of a core with those modifiers, 2.0%
+    /// without. A `strokeEnd` on a shape layer animates on the render server
+    /// and costs the process nothing after the write.
     private var arc: some View {
-        Circle()
-            .trim(from: 0, to: 0.75 * fraction)
-            .stroke(arcStyle, style: StrokeStyle(lineWidth: size * 0.023, lineCap: .round))
-            .rotationEffect(.degrees(135))
-            // A spring, not a timing curve. Readings land about once a second and an
-            // ease-out finished in 0.6s, so the arc moved, stopped dead, waited, then
-            // moved again - the stepping this was reported for. A spring retargets
-            // mid-flight from wherever it has got to, so consecutive readings join up
-            // into one continuous travel.
-            .animation(.smooth(duration: 0.9), value: fraction)
-            .animation(.smooth(duration: 0.4), value: alert)
-            .animation(.smooth(duration: 0.4), value: controlled)
+        ArcLayer(size: size, fraction: fraction,
+                 colors: arcColors.map { $0.cgColor })
+            .frame(width: size, height: size)
     }
 
-    /// The turning disc.
+    private var arcColors: [NSColor] {
+        if alert { return [NSColor(Palette.critical), NSColor(Palette.critical)] }
+        return controlled
+            ? [NSColor(Palette.calm), NSColor(Palette.series[2])]
+            : [NSColor(Palette.ink).withAlphaComponent(0.42),
+               NSColor(Palette.ink).withAlphaComponent(0.42)]
+    }
+
+    /// What the disc looks like at this speed step, as a key for the render.
+    private struct DiscKey: Equatable {
+        let size: CGFloat; let spread: Double; let tint: Color; let ink: Double
+        let scheme: ColorScheme
+    }
+
+    private var discKey: DiscKey {
+        DiscKey(size: size, spread: blurred, tint: bladeColor, ink: bladeOpacity, scheme: scheme)
+    }
+
+    /// The turning disc: a picture, turned by the render server.
     ///
-    /// Sixty frames a second, not the display's own rate: this is a decorative
-    /// spinner and nobody can tell 120 from 60 on it. Paused outright when the fan
-    /// has stopped, and when the window is behind another or on another Space -
-    /// every frame of this is a fresh commit of a whole glass window, and nobody
-    /// is looking.
+    /// The blades used to turn in SwiftUI, a `TimelineView` re-evaluating the
+    /// dial sixty times a second. The dial itself was cheap; the problem was
+    /// what every one of those frames did to the rest of the window. Any
+    /// animation in a SwiftUI window makes `NSHostingView.layout()` walk the
+    /// whole tree and recompute its preferences on each frame, and on the
+    /// overview that tree contains a chart of seven hundred marks. Bisected
+    /// with the window closed: two dials, 19% of a core; no dials, 5.6%.
+    ///
+    /// So the disc is rendered to a bitmap once per speed step - ten of them
+    /// across the range - and a CABasicAnimation on the layer turns it. That
+    /// runs on the render server, on the GPU, and the process does nothing per
+    /// frame at all. A change of speed reads the angle back from the
+    /// presentation layer and restarts from there, so nothing jumps.
     private var disc: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60,
-                                paused: spinRate == 0 || !visibility.isVisible)) { context in
-            let angle = spin.advance(to: context.date, rate: spinRate)
-            TurningDisc(size: size, blades: Self.bladeCount, spread: blurred,
-                        tint: bladeColor, ink: bladeOpacity)
-                // The closure runs every frame, so without this the gradients and
-                // their stops were rebuilt sixty times a second per dial. Nothing
-                // in the disc depends on the clock except how far it has turned.
-                .equatable()
-                .rotationEffect(.degrees(angle))
-                .animation(.smooth(duration: 0.9), value: blurred)
-                .animation(.smooth(duration: 0.5), value: bladeOpacity)
-        }
+        SpinningDisc(image: discImage, size: size, degreesPerSecond: spinRate,
+                     paused: spinRate == 0 || !visibility.isVisible)
+            .frame(width: size, height: size)
+            .task(id: discKey) {
+                let renderer = ImageRenderer(content:
+                    TurningDisc(size: size, blades: Self.bladeCount, spread: blurred,
+                                tint: bladeColor, ink: bladeOpacity)
+                        .environment(\.colorScheme, scheme))
+                renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+                discImage = renderer.cgImage
+            }
     }
 
     private var readout: some View {
@@ -257,14 +246,9 @@ struct FanDial: View {
     }
 }
 
-/// The blades and the air they drag, drawn once and then simply turned.
-///
-/// Split out and made `Equatable` so the frame loop cannot force it to redraw.
-/// It lives inside a `TimelineView`, whose closure runs on every frame, and
-/// rebuilding the gradients and their stops sixty times a second for each dial
-/// on screen is work that nothing asked for: only the rotation depends on the
-/// clock, and that is applied outside.
-private struct TurningDisc: View, Equatable {
+/// The blades and the air they drag. Never on screen as a view: `FanDial`
+/// renders it to a bitmap and hands the bitmap to `SpinningDisc`.
+private struct TurningDisc: View {
     let size: CGFloat
     let blades: Int
     /// How far from "separate petals" towards "a turning disc", 0 to 1.
@@ -272,25 +256,12 @@ private struct TurningDisc: View, Equatable {
     let tint: Color
     let ink: Double
 
-    @Environment(\.colorScheme) private var scheme
-    @State private var airTexture: Image?
-
-    static func == (a: TurningDisc, b: TurningDisc) -> Bool {
-        a.size == b.size && a.blades == b.blades && a.tint == b.tint
-            && abs(a.spread - b.spread) < 0.0001 && abs(a.ink - b.ink) < 0.0001
-    }
-
-    /// What the air texture depends on. Notably not the speed: the sweep's shape
-    /// is the same at every rpm, and only how strongly it shows through changes.
-    private struct AirKey: Equatable {
-        let size: CGFloat
-        let blades: Int
-        let scheme: ColorScheme
-    }
-
     var body: some View {
         ZStack {
-            air.rotationEffect(.degrees(-lag))
+            AirSweep(size: size, blades: blades, tint: tint)
+                .opacity(ink * 1.15 * spread)
+                // The air lags a little behind the blade that threw it.
+                .rotationEffect(.degrees(-spread * (360 / Double(blades)) * 0.22))
             FanBlades(count: blades, spread: 1 + 0.9 * spread)
                 .fill(tint)
                 // A fan at full tilt shows no distinct blade, so the crisp set
@@ -298,40 +269,166 @@ private struct TurningDisc: View, Equatable {
                 .opacity(ink * (1 - 0.3 * spread))
         }
         .frame(width: size, height: size)
-        .task(id: AirKey(size: size, blades: blades, scheme: scheme)) {
-            airTexture = Self.renderAir(size: size, blades: blades, tint: tint, scheme: scheme)
+    }
+}
+
+/// A bitmap on a layer, turned by Core Animation at a rate in degrees per
+/// second. Speed changes are continuous: the current angle is read from the
+/// presentation layer and the new animation starts there.
+///
+/// Layer-hosting, not layer-backed: the view supplies its own `CALayer` before
+/// `wantsLayer` is set, so AppKit neither manages the layer's display nor
+/// wraps writes to it in implicit animations. The first version was
+/// layer-backed and rewrote `frame`, `position` and `contents` on every
+/// SwiftUI update; AppKit answered each write with an `NSAnimationContext`
+/// group and a redisplay, and with the window shown the two dials alone cost
+/// 26% of a core. Now nothing here is written unless it changed, and every
+/// write happens with implicit actions off.
+private struct SpinningDisc: NSViewRepresentable {
+    let image: CGImage?
+    let size: CGFloat
+    let degreesPerSecond: Double
+    let paused: Bool
+
+    final class Coordinator {
+        var image: CGImage?
+        var rate: Double = 0
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        let layer = CALayer()
+        layer.contentsGravity = .resizeAspect
+        layer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        layer.frame = view.bounds
+        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        layer.position = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        view.layer = layer
+        view.wantsLayer = true
+        apply(to: layer, context.coordinator)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        guard let layer = view.layer else { return }
+        apply(to: layer, context.coordinator)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: size, height: size)
+    }
+
+    private func apply(to layer: CALayer, _ state: Coordinator) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        if state.image !== image {
+            state.image = image
+            layer.contents = image
         }
+
+        let wanted = paused ? 0 : max(degreesPerSecond, 0)
+        guard wanted != state.rate else { return }
+        state.rate = wanted
+
+        let current = (layer.presentation() ?? layer)
+            .value(forKeyPath: "transform.rotation.z") as? Double ?? 0
+        layer.removeAnimation(forKey: "spin")
+        layer.setValue(current, forKeyPath: "transform.rotation.z")
+        guard wanted > 0 else { return }
+
+        // Clockwise on screen: the layer's z axis points out of it, and AppKit's
+        // coordinate space is not flipped, so a positive rotation is
+        // counter-clockwise - hence the sign.
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = current
+        turn.toValue = current - 2 * Double.pi
+        turn.duration = 360 / wanted
+        turn.repeatCount = .infinity
+        turn.timingFunction = CAMediaTimingFunction(name: .linear)
+        layer.add(turn, forKey: "spin")
+    }
+}
+
+/// Three quarters of a circle, from bottom-left round to bottom-right, filled
+/// to `fraction` of its length. A gradient layer masked by a shape layer, so the
+/// stroke can carry two colours; the mask's `strokeEnd` is what moves, with
+/// Core Animation's implicit animation doing the easing off-process.
+private struct ArcLayer: NSViewRepresentable {
+    let size: CGFloat
+    let fraction: Double
+    let colors: [CGColor]
+
+    final class Coordinator {
+        let gradient = CAGradientLayer()
+        let mask = CAShapeLayer()
+        var fraction: Double = -1
+        var colors: [CGColor] = []
+        var size: CGFloat = 0
     }
 
-    /// The air, as a bitmap.
-    ///
-    /// A profile of the running app put `rgba64_shade_conic_RGB` and the `atan2f`
-    /// under it at about a third of everything the main thread did - the angular
-    /// gradient was being shaded per pixel on the CPU on every frame of every
-    /// dial, and `drawingGroup()` did not cache it. The sweep is identical at
-    /// every speed, though: `spread` only decides how strongly it shows. So it is
-    /// drawn once, and each frame merely turns and fades a picture.
-    private var air: some View {
-        Group {
-            if let airTexture {
-                airTexture.opacity(ink * 1.15 * spread)
-            }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        let state = context.coordinator
+        state.gradient.startPoint = CGPoint(x: 0, y: 0)
+        state.gradient.endPoint = CGPoint(x: 1, y: 1)
+        state.gradient.mask = state.mask
+        state.mask.fillColor = nil
+        state.mask.strokeColor = NSColor.black.cgColor
+        state.mask.lineCap = .round
+        state.mask.strokeStart = 0
+        view.layer = state.gradient
+        view.wantsLayer = true
+        apply(state)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) { apply(context.coordinator) }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: size, height: size)
+    }
+
+    private func apply(_ state: Coordinator) {
+        if state.size != size {
+            state.size = size
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            let bounds = CGRect(x: 0, y: 0, width: size, height: size)
+            state.gradient.frame = bounds
+            state.mask.frame = bounds
+            state.mask.lineWidth = size * 0.023
+            // The layer is not flipped: y is up and angles run counter-clockwise
+            // from the x axis. The gauge sweeps from bottom-left (225 degrees)
+            // over the top to bottom-right (-45 degrees), which on screen is
+            // clockwise - decreasing angle, hence `clockwise: true`.
+            let inset = size * 0.023 / 2
+            let path = CGMutablePath()
+            path.addArc(center: CGPoint(x: size / 2, y: size / 2), radius: size / 2 - inset,
+                        startAngle: .pi * 1.25, endAngle: -.pi * 0.25, clockwise: true)
+            state.mask.path = path
+            CATransaction.commit()
         }
-    }
-
-    /// The air lags a little behind the blade that threw it.
-    private var lag: Double {
-        spread * (360 / Double(blades)) * 0.22
-    }
-
-    @MainActor
-    private static func renderAir(size: CGFloat, blades: Int,
-                                  tint: Color, scheme: ColorScheme) -> Image? {
-        let renderer = ImageRenderer(content: AirSweep(size: size, blades: blades, tint: tint)
-            .environment(\.colorScheme, scheme))
-        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
-        guard let rendered = renderer.cgImage else { return nil }
-        return Image(decorative: rendered, scale: renderer.scale)
+        if state.colors != colors {
+            state.colors = colors
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.4)
+            state.gradient.colors = colors
+            CATransaction.commit()
+        }
+        if state.fraction != fraction {
+            state.fraction = fraction
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.5)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            state.mask.strokeEnd = fraction
+            CATransaction.commit()
+        }
     }
 }
 

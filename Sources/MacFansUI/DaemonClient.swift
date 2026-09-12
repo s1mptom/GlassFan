@@ -12,8 +12,22 @@ final class DaemonClient {
     static let socketPath = ProcessInfo.processInfo.environment["MACFANS_SOCKET"]
         ?? "/var/run/macfans.sock"
 
-    private(set) var snapshot: Snapshot?
-    private(set) var history: [HistorySample] = []
+    /// The snapshot and the history it extends, as one value.
+    ///
+    /// They were two stored properties, and applying a reading wrote three
+    /// times - the snapshot, then an append to the history, then the trim of
+    /// its oldest sample - and every write was its own SwiftUI pass: the
+    /// overview re-laid out its chart about 2.7 times per one-a-second
+    /// reading, measured with `_printChanges`. One stored value, one write,
+    /// one pass. The two names below are what everything else reads.
+    private struct Feed {
+        var snapshot: Snapshot?
+        var history: [HistorySample] = []
+    }
+    private var feed = Feed()
+
+    var snapshot: Snapshot? { feed.snapshot }
+    var history: [HistorySample] { feed.history }
     private(set) var isConnected = false
     private(set) var lastError: String?
 
@@ -36,16 +50,15 @@ final class DaemonClient {
     static func demo(connected: Bool = true, alarming: Bool = false) -> DaemonClient {
         let client = DaemonClient()
         guard connected else { return client }
-        client.history = DemoFixture.history()
-        client.snapshot = DemoFixture.snapshot(alarming: alarming)
+        client.feed = Feed(snapshot: DemoFixture.snapshot(alarming: alarming),
+                           history: DemoFixture.history())
         client.isConnected = true
         return client
     }
 
     func start() {
         if DemoFixture.isEnabled {
-            history = DemoFixture.history()
-            snapshot = DemoFixture.snapshot()
+            feed = Feed(snapshot: DemoFixture.snapshot(), history: DemoFixture.history())
             isConnected = true
             return
         }
@@ -119,21 +132,23 @@ final class DaemonClient {
     private func apply(_ message: DaemonMessage) {
         switch message {
         case .history(let samples):
-            history = samples
+            feed.history = samples
 
         case .snapshot(let snapshot):
-            self.snapshot = snapshot
             let tracked = Set(snapshot.config.trackedSensors)
                 .union(snapshot.config.fans.flatMap(\.sensorKeys))
             var temps: [String: Double] = [:]
             for sensor in snapshot.sensors where tracked.contains(sensor.key) {
                 temps[sensor.key] = sensor.value
             }
+            // Built off to the side and written once: see `Feed`.
+            var history = feed.history
             history.append(HistorySample(t: snapshot.time, temps: temps,
                                          fanRPM: snapshot.fans.map(\.actualRPM)))
             if history.count > historyLimit {
                 history.removeFirst(history.count - historyLimit)
             }
+            feed = Feed(snapshot: snapshot, history: history)
             reconcileConfig(with: snapshot.config)
 
         case .failure(let text):

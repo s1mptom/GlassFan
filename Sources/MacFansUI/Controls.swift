@@ -149,6 +149,9 @@ enum Runtime {
     /// would be photographed mid-fade - or, with a delay on it, not yet started at all.
     /// Entrance animations skip straight to their end there.
     static let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    /// Prints, for each view that opts in, what made SwiftUI re-evaluate it.
+    /// Diagnostic only: run with MACFANS_TRACE=1 and count lines per second.
+    static let traces = ProcessInfo.processInfo.environment["MACFANS_TRACE"] == "1"
 }
 
 /// Content that fades and lifts into place, staggered by `delay`.

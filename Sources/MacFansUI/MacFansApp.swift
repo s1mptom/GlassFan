@@ -24,6 +24,20 @@ public struct MacFansApp: App {
                     client.start()
                     installer.refresh()
                     NSApplication.shared.activate(ignoringOtherApps: true)
+                    // Measurement hook: what the app costs with its window closed
+                    // can only be measured with the window closed, and nothing
+                    // in this environment can press the close button.
+                    if let delay = ProcessInfo.processInfo.environment["MACFANS_CLOSE_AFTER"]
+                        .flatMap(Double.init) {
+                        try? await Task.sleep(for: .seconds(delay))
+                        let windows = NSApplication.shared.windows
+                        Diagnostics.log("[hook] windows before close: "
+                            + windows.map { "\($0.className) visible=\($0.isVisible)" }.joined(separator: ", "))
+                        let main = windows.first { $0.isVisible && $0.styleMask.contains(.titled) }
+                        main?.performClose(nil)
+                        Diagnostics.log("[hook] closed \(main?.className ?? "nothing"); windows now: "
+                            + NSApplication.shared.windows.map { "\($0.className) visible=\($0.isVisible)" }.joined(separator: ", "))
+                    }
                 }
         }
         .commands {
@@ -196,23 +210,58 @@ struct MainWindow: View {
 }
 
 /// Slow pulse, so a live connection reads as alive without blinking at anyone.
-struct LiveDot: View {
+///
+/// Drawn by Core Animation, not SwiftUI. This was a SwiftUI `repeatForever` on
+/// opacity, and SwiftUI runs that by re-evaluating and committing the view tree
+/// on every frame of the display - about 120 commits a second, for a six-point
+/// dot, for as long as the app is open. It was the single largest consumer of
+/// CPU in the app, and it kept going after the window was closed, because
+/// closing a SwiftUI window hides it rather than tearing it down. A CABasicAnimation
+/// on a layer is handed to the render server once and costs the process nothing
+/// after that.
+struct LiveDot: NSViewRepresentable {
     let active: Bool
-    @State private var breathing = false
 
-    var body: some View {
-        Circle()
-            .fill(active ? Color(red: 0.20, green: 0.79, blue: 0.54) : Palette.critical)
-            .frame(width: 6, height: 6)
-            .shadow(color: (active ? Color(red: 0.20, green: 0.79, blue: 0.54) : Palette.critical)
-                .opacity(0.9), radius: 5)
-            .opacity(breathing ? 1 : 0.5)
-            // The word beside it already says "connected"; the dot is decoration.
-            .accessibilityHidden(true)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
-                    breathing = true
-                }
-            }
+    private var color: NSColor {
+        active ? NSColor(red: 0.20, green: 0.79, blue: 0.54, alpha: 1)
+               : NSColor(Palette.critical)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 6, height: 6))
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 3
+        view.layer?.shadowRadius = 5
+        view.layer?.shadowOpacity = 0.9
+        view.layer?.shadowOffset = .zero
+        view.layer?.masksToBounds = false
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentHuggingPriority(.required, for: .vertical)
+        apply(to: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        apply(to: view)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: 6, height: 6)
+    }
+
+    private func apply(to view: NSView) {
+        guard let layer = view.layer else { return }
+        layer.backgroundColor = color.cgColor
+        layer.shadowColor = color.cgColor
+        if layer.animation(forKey: "breathe") == nil {
+            let breathe = CABasicAnimation(keyPath: "opacity")
+            breathe.fromValue = 0.5
+            breathe.toValue = 1
+            breathe.duration = 1.3
+            breathe.autoreverses = true
+            breathe.repeatCount = .infinity
+            breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(breathe, forKey: "breathe")
+        }
     }
 }

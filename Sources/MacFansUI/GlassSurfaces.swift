@@ -136,10 +136,20 @@ enum WindowBlur {
         Int((min(max(frost, 0), 1) * 40).rounded())
     }
 
+    /// The radius last handed to the window server, per window. Setting it is
+    /// not free and not idempotent as far as the window is concerned: every call
+    /// marked the window for redisplay, `updateNSView` runs on every SwiftUI
+    /// update, and a redisplay is a SwiftUI update - so the app chased its own
+    /// tail at the display's refresh rate, on every screen, with the window
+    /// closed. Only a change goes through now.
+    nonisolated(unsafe) private static var applied: [Int: Int] = [:]
+
     static func apply(radius: Int, to window: NSWindow) {
         guard let functions else { return }
-        _ = functions.setRadius(functions.connection(),
-                                Int32(window.windowNumber), Int32(max(radius, 0)))
+        let radius = max(radius, 0)
+        guard applied[window.windowNumber] != radius else { return }
+        applied[window.windowNumber] = radius
+        _ = functions.setRadius(functions.connection(), Int32(window.windowNumber), Int32(radius))
     }
 }
 

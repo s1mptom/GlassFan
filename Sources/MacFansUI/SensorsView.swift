@@ -68,16 +68,25 @@ struct SensorsView: View {
         .riseIn(0.05)
     }
 
+    /// Rows are direct children of the lazy stack, grouped with `Section`.
+    ///
+    /// They used to sit inside a `VStack` per group, and a `VStack` is not lazy:
+    /// the lazy stack saw eight children and had to size each, so every one of
+    /// the 228 rows existed and was laid out on every reading, on-screen or
+    /// not - about a sixth of a core for a list showing twenty of them. With
+    /// sections, only the rows in view are built.
     private func sensorList(_ groups: [(SensorGroup, [SensorReading])]) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(groups, id: \.0) { group, sensors in
-                    VStack(alignment: .leading, spacing: 0) {
-                        SectionCaption(text: group.title)
-                            .padding(.bottom, 8)
+                    Section {
                         ForEach(sensors) { sensor in
                             SensorRow(sensor: sensor, tracked: tracked.contains(sensor.key))
                         }
+                    } header: {
+                        SectionCaption(text: group.title)
+                            .padding(.top, 20)
+                            .padding(.bottom, 8)
                     }
                 }
             }

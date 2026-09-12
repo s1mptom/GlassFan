@@ -91,6 +91,13 @@ struct TimeChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
             }
         }
+        // Never animate a data change. With stable point identities Swift Charts
+        // interpolates every mark from where it was to where it is now, on its
+        // own display link, and a live chart whose window slides a step on every
+        // reading is therefore never not animating: a frame of layout for seven
+        // hundred marks, sixty to a hundred and twenty times a second, with the
+        // window closed too. The data is history; it does not need to glide.
+        .transaction { $0.animation = nil }
         .chartForegroundStyleScale(range: order.indices.map { Palette.color($0) })
         .chartYScale(domain: effectiveDomain)
         .chartLegend(.hidden)
@@ -121,11 +128,14 @@ struct TimeChart: View {
         // Only while the line is drawing itself in. Left in place afterwards this
         // is a full-size mask over the whole plot - an offscreen pass the chart
         // pays for on every redraw, for a wipe that finished seconds ago.
+        // No GeometryReader here, or in the overlay below. A reader inside a
+        // chart's mask reports a size, the chart lays out again, the reader
+        // reports again - a layout loop that never touches a `body`, so it is
+        // invisible to SwiftUI's own change tracing, runs at the display's
+        // refresh rate, and carries on with the window closed. It was most of
+        // what the overview cost. A scale needs no measurement.
         .mask(alignment: .leading) {
-            GeometryReader { geometry in
-                Rectangle().frame(width: traced < 1 ? geometry.size.width * traced
-                                                    : geometry.size.width)
-            }
+            Rectangle().scaleEffect(x: max(traced, 0.001), y: 1, anchor: .leading)
         }
         .compositingGroup()
         .onAppear {
@@ -133,21 +143,19 @@ struct TimeChart: View {
             withAnimation(.easeInOut(duration: 1.5).delay(0.15)) { traced = 1 }
         }
         .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            guard let plotFrame = proxy.plotFrame else { return }
-                            let x = location.x - geometry[plotFrame].origin.x
-                            hoverDate = proxy.value(atX: x, as: Date.self)
-                        case .ended:
-                            hoverDate = nil
-                        }
+            // The overlay is laid out over the plot area itself, so a pointer
+            // location here is already in plot coordinates.
+            Rectangle()
+                .fill(.clear)
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        hoverDate = proxy.value(atX: location.x, as: Date.self)
+                    case .ended:
+                        hoverDate = nil
                     }
-            }
+                }
         }
         .overlay(alignment: .topTrailing) {
             if let hoverDate, let readout = readout(at: hoverDate) {
