@@ -126,9 +126,12 @@ struct FansView: View {
                     ForEach(current.sensorKeys, id: \.self) { key in
                         SensorChip(name: SensorCatalog.info(for: key).name,
                                    value: client.reading(for: key),
-                                   highlighted: client.reading(for: key) == fan.drivingTemp)
+                                   highlighted: client.reading(for: key) == fan.drivingTemp) {
+                            binding(for: fan).sensorKeys.wrappedValue.removeAll { $0 == key }
+                        }
                     }
                 }
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: current.sensorKeys)
                 Text(L10n.t("Кривую ведёт самый горячий", "The hottest one drives the curve"))
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.ink.opacity(0.3))
@@ -307,16 +310,52 @@ struct SensorPicker: View {
     @Binding var selection: [String]
     @State private var search = ""
 
-    private var groups: [(SensorGroup, [SensorReading])] {
-        SensorGroup.allCases.compactMap { group in
-            let sensors = client.sensors(in: group).filter { sensor in
-                guard !search.isEmpty else { return true }
-                let info = SensorCatalog.info(for: sensor.key)
-                return info.name.localizedCaseInsensitiveContains(search)
-                    || sensor.key.localizedCaseInsensitiveContains(search)
+    /// One flat list, so a row can travel between sections with an animation.
+    ///
+    /// Chosen sensors live at the top, under their own caption, and a sensor
+    /// moves there the moment it is ticked - up out of its group, not the list
+    /// scrolling to it. Sections were separate `ForEach`es before, and SwiftUI
+    /// cannot animate a row from one of those to another; it can only remove it
+    /// here and insert it there. A single `ForEach` over rows with stable ids
+    /// makes the move a move.
+    private enum Row: Identifiable {
+        case caption(String, String)
+        case sensor(SensorReading)
+        var id: String {
+            switch self {
+            case .caption(let id, _): return "caption:" + id
+            case .sensor(let reading): return "sensor:" + reading.key
             }
-            return sensors.isEmpty ? nil : (group, sensors.sorted { $0.value > $1.value })
         }
+    }
+
+    private var rows: [Row] {
+        func matches(_ sensor: SensorReading) -> Bool {
+            guard !search.isEmpty else { return true }
+            let info = SensorCatalog.info(for: sensor.key)
+            return info.name.localizedCaseInsensitiveContains(search)
+                || sensor.key.localizedCaseInsensitiveContains(search)
+        }
+        let chosen = Set(selection)
+        var rows: [Row] = []
+
+        let picked = (client.snapshot?.sensors ?? [])
+            .filter { chosen.contains($0.key) && matches($0) }
+            .sorted { $0.value > $1.value }
+        if !picked.isEmpty {
+            rows.append(.caption("chosen", L10n.t("Выбрано", "Chosen")))
+            rows += picked.map(Row.sensor)
+        }
+
+        for group in SensorGroup.allCases {
+            let sensors = client.sensors(in: group)
+                .filter { !chosen.contains($0.key) && matches($0) }
+                .sorted { $0.value > $1.value }
+            guard !sensors.isEmpty else { continue }
+            rows.append(.caption(group.rawValue, group.title))
+            rows += sensors.map(Row.sensor)
+        }
+        return rows
     }
 
     var body: some View {
@@ -327,10 +366,11 @@ struct SensorPicker: View {
                 .fill(Palette.ink.opacity(0.08))
                 .frame(height: 0.5)
 
-            if groups.isEmpty {
+            let rows = self.rows
+            if rows.isEmpty {
                 empty
             } else {
-                list
+                list(rows)
             }
         }
     }
@@ -372,22 +412,24 @@ struct SensorPicker: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var list: some View {
+    private func list(_ rows: [Row]) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
-                ForEach(groups, id: \.0) { group, sensors in
-                    VStack(alignment: .leading, spacing: 2) {
-                        SectionCaption(text: group.title)
+            LazyVStack(alignment: .leading, spacing: 2) {
+                ForEach(rows) { item in
+                    switch item {
+                    case .caption(_, let title):
+                        SectionCaption(text: title)
                             .padding(.leading, 8)
+                            .padding(.top, 12)
                             .padding(.bottom, 4)
-                        ForEach(sensors) { sensor in
-                            row(sensor)
-                        }
+                    case .sensor(let sensor):
+                        row(sensor)
                     }
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 12)
+            .padding(.bottom, 12)
+            .animation(.spring(response: 0.38, dampingFraction: 0.86), value: selection)
         }
         .scrollContentBackground(.hidden)
     }

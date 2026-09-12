@@ -226,6 +226,9 @@ struct SensorChip: View {
     let name: String
     let value: Double?
     var highlighted: Bool = false
+    /// Given, the chip carries a cross that removes it - so taking a sensor off
+    /// the curve is one click here rather than a trip through the picker.
+    var onRemove: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -236,6 +239,20 @@ struct SensorChip: View {
                 .font(.system(size: 10.5))
                 .monospacedDigit()
                 .foregroundStyle(Palette.ink.opacity(0.45))
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Palette.ink.opacity(0.45))
+                        .frame(width: 14, height: 14)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, -2)
+                .padding(.trailing, -4)
+                .help(L10n.t("Убрать с кривой", "Remove from the curve"))
+                .accessibilityLabel(L10n.t("Убрать \(name) с кривой", "Remove \(name) from the curve"))
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
