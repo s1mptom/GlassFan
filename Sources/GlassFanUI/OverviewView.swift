@@ -229,24 +229,14 @@ struct OverviewView: View {
     // MARK: Chart
 
     private var chart: some View {
-        let names = trackedKeys.map { SensorCatalog.info(for: $0).name }
-        // The name was looked up inside the inner loop, so a catalogue lookup ran
-        // once per point rather than once per series - twelve hundred of them for
-        // a chart with four lines on it.
-        let keyed = Array(zip(trackedKeys, names))
-        let points = samples.flatMap { sample -> [SeriesPoint] in
-            let date = Date(timeIntervalSince1970: sample.t)
-            return keyed.compactMap { key, name -> SeriesPoint? in
-                guard let value = sample.temps[key] else { return nil }
-                return SeriesPoint(date: date, value: value, series: name)
-            }
-        }
+        let names = SensorCatalog.distinctNames(for: trackedKeys)
+        let points = ChartSampling.points(samples, keys: trackedKeys)
 
         return VStack(alignment: .leading, spacing: 12) {
             if points.isEmpty {
                 DataHint()
             } else {
-                TimeChart(points: points, order: names, unit: "°C",
+                TimeChart(points: points, order: trackedKeys, labels: names, unit: "°C",
                           yDomain: ChartSampling.domain(for: points.map(\.value)), areaUnderFirst: true) {
                     String(format: "%.0f°", $0)
                 }

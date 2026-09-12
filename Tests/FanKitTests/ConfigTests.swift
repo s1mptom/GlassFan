@@ -33,3 +33,15 @@ struct ConfigTests {
         #expect(cfg.pollInterval == 0.25)
     }
 }
+
+@Suite("Sensor names")
+struct SensorNameTests {
+    @Test("shared names are told apart by key; unique ones are left alone")
+    func distinct() {
+        let names = SensorCatalog.distinctNames(for: ["Tp0D", "Tp0E", "TG0B"])
+        #expect(names[0] != names[1])
+        #expect(names[0].hasSuffix("Tp0D"))
+        #expect(names[1].hasSuffix("Tp0E"))
+        #expect(!names[2].contains("·"))
+    }
+}

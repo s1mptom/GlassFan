@@ -142,6 +142,21 @@ public enum SensorCatalog {
     ]
 
     /// Sensors the daemon keeps history for out of the box.
+    /// Display names for `keys`, in order, made distinct where they collide.
+    ///
+    /// Uncurated keys get a generated name per group, so every `Tp*` core is
+    /// "CPU core". Side by side that is two lines nobody can tell apart - and
+    /// anything that used the name as an identity merged them into one. Where a
+    /// name is shared, the key goes after it.
+    public static func distinctNames(for keys: [String]) -> [String] {
+        let names = keys.map { info(for: $0).name }
+        var counts: [String: Int] = [:]
+        for name in names { counts[name, default: 0] += 1 }
+        return zip(keys, names).map { key, name in
+            (counts[name] ?? 0) > 1 ? "\(name) · \(key)" : name
+        }
+    }
+
     public static let defaultTracked = [
         "TCMz", "Tp0D", "Tp0E", "TG0B", "Ts0P", "Ts1P", "TaLW", "TaRW", "TB0T", "TH0x",
     ]

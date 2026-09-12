@@ -24,7 +24,10 @@ struct SeriesPoint: Identifiable {
 /// here; live updates just move the data.
 struct TimeChart: View {
     let points: [SeriesPoint]
+    /// The series identities, in colour order.
     let order: [String]
+    /// What each series in `order` is called on screen.
+    var labels: [String]? = nil
     let unit: String
     var includesZero: Bool = false
     /// Explicit y range. Needed whenever an area is drawn: an AreaMark anchors to zero
@@ -101,7 +104,9 @@ struct TimeChart: View {
         // hundred marks, sixty to a hundred and twenty times a second, with the
         // window closed too. The data is history; it does not need to glide.
         .transaction { $0.animation = nil }
-        .chartForegroundStyleScale(range: order.indices.map { Palette.color($0) })
+        // Domain given, not inferred: otherwise colours go to series in the order
+        // they first turn up in the data, which is not the order of the legend.
+        .chartForegroundStyleScale(domain: order, range: order.indices.map { Palette.color($0) })
         .chartYScale(domain: effectiveDomain)
         .chartLegend(.hidden)
         .chartYAxis {
@@ -199,7 +204,8 @@ struct TimeChart: View {
             guard let nearest = candidates.min(by: {
                 abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date))
             }) else { continue }
-            result.append((series, Palette.color(index), nearest.value))
+            let label = labels.flatMap { $0.indices.contains(index) ? $0[index] : nil } ?? series
+            result.append((label, Palette.color(index), nearest.value))
         }
         return result.isEmpty ? nil : result
     }

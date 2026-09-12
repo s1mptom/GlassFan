@@ -71,6 +71,23 @@ enum ChartSampling {
         }
     }
 
+    /// One point per sensor per sample, each line identified by the sensor's key.
+    ///
+    /// The line used to be identified by the sensor's display name. Several
+    /// cores share the name "CPU core", so two of them charted together became
+    /// one series, and Swift Charts drew a single line hopping between the two
+    /// on every sample: a saw of seven to ten degrees that was really the gap
+    /// between two cores, each of them steady.
+    static func points(_ samples: [HistorySample], keys: [String]) -> [SeriesPoint] {
+        samples.flatMap { sample -> [SeriesPoint] in
+            let date = Date(timeIntervalSince1970: sample.t)
+            return keys.compactMap { key -> SeriesPoint? in
+                guard let value = sample.temps[key] else { return nil }
+                return SeriesPoint(date: date, value: value, series: key)
+            }
+        }
+    }
+
     /// A range that holds the data with a little air, snapped outward to whole
     /// `step`s so that a reading drifting by a tenth of a degree does not redraw
     /// the axis. Never anchored at zero: room temperature is not a meaningful

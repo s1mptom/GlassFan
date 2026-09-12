@@ -80,3 +80,25 @@ struct ChartSamplingTests {
         #expect(d.contains(50))
     }
 }
+
+/// The CPU line drew a saw of seven to ten degrees while the cores it showed
+/// moved by one: two cores share the display name "CPU core", the chart used the
+/// name as the line's identity, and so it drew one line hopping between them.
+@Suite("Chart series")
+struct ChartSeriesTests {
+    @Test("two sensors with the same name stay two lines")
+    func sameNameTwoSeries() {
+        let history = (0..<10).map {
+            HistorySample(t: Double($0), temps: ["Tp0D": 72, "Tp0E": 58], fanRPM: [])
+        }
+        let points = ChartSampling.points(history, keys: ["Tp0D", "Tp0E"])
+        let byLine = Dictionary(grouping: points, by: \.series)
+
+        #expect(byLine.count == 2)
+        // Each line is flat - no hopping between the two cores.
+        #expect(Set(byLine["Tp0D"]!.map(\.value)) == [72])
+        #expect(Set(byLine["Tp0E"]!.map(\.value)) == [58])
+        // And every point is its own mark.
+        #expect(Set(points.map(\.id)).count == points.count)
+    }
+}
