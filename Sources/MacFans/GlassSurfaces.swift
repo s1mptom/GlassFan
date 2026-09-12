@@ -12,31 +12,48 @@ enum GlassStyle {
     /// 0 leaves the window a clear pane; 1 frosts it right over.
     static let defaultFrost = 0.62
     /// Negative darkens, positive lightens, 0 leaves the material as the system draws it.
-    static let defaultTint = 0.0
+    /// The design's glass is dark, so out of the box the tone leans that way.
+    static let defaultTint = -0.35
 
     static let frostRange: ClosedRange<Double> = 0...1
     static let tintRange: ClosedRange<Double> = -1...1
 
-    /// Asymmetric on purpose: a wash of white reads much stronger than the same amount
-    /// of black, so lightening is given a shorter lever.
-    static func tint(_ amount: Double) -> Color {
-        amount >= 0 ? .white.opacity(amount * 0.22) : .black.opacity(-amount * 0.40)
+    /// The veil laid over the blur: tone picks its lightness, frost its density.
+    static func scrim(frost: Double, tint: Double) -> Color {
+        let level = min(max(0.12 + tint * 0.45, 0), 1)
+        return Color(white: level).opacity(min(max(frost, 0), 1) * 0.88)
     }
 }
 
-/// Window backing. Drawn as a real view rather than a material shape style, because a
-/// shape style cannot be dimmed or tinted by degrees.
+/// Real behind-window blur. A SwiftUI Material only blurs content inside its own
+/// window, so in a transparent window it is just a translucent fill and the desktop
+/// behind stays sharp - which is exactly how the frosting went missing.
+struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .underWindowBackground
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material
+    }
+}
+
+/// Window backing: blur underneath, a veil on top whose density and lightness are the
+/// user's two dials.
 struct GlassBackground: View {
     @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
     @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
 
     var body: some View {
         ZStack {
-            Rectangle()
-                .fill(.regularMaterial)
-                .opacity(frost)
-            Rectangle()
-                .fill(GlassStyle.tint(tint))
+            VisualEffectBackground()
+            Rectangle().fill(GlassStyle.scrim(frost: frost, tint: tint))
         }
         .ignoresSafeArea()
     }

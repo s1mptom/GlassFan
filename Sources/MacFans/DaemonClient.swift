@@ -32,6 +32,12 @@ final class DaemonClient {
     var config: AppConfig? { draftConfig ?? snapshot?.config }
 
     func start() {
+        if DemoFixture.isEnabled {
+            history = DemoFixture.history()
+            snapshot = DemoFixture.snapshot()
+            isConnected = true
+            return
+        }
         connect()
         Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in

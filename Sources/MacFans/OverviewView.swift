@@ -150,13 +150,12 @@ struct OverviewView: View {
                         .foregroundStyle(.white.opacity(0.42))
                         .lineLimit(1)
                 }
-                .frame(width: 76, alignment: .leading)
             }
             Spacer(minLength: 12)
             GlassSegmented(
                 items: TimeWindow.allCases.map { .init(value: $0, title: $0.title) },
                 selection: $window,
-                segmentWidth: 40,
+                segmentWidth: nil,
                 fontSize: 11
             )
         }

@@ -1,6 +1,41 @@
 import SwiftUI
 import FanKit
 
+/// The four blades from the design, ported curve for curve rather than approximated.
+///
+/// Each blade is a narrow petal from the hub to the rim: move to the centre, out to the
+/// tip, back to the centre. The earlier version used control points twice this wide and
+/// read as a blob, which is why it got replaced by a system glyph - this is the fix.
+struct FanBlades: Shape {
+    func path(in rect: CGRect) -> Path {
+        let side = min(rect.width, rect.height)
+        let origin = CGPoint(x: rect.midX - side / 2, y: rect.midY - side / 2)
+        func point(_ x: Double, _ y: Double) -> CGPoint {
+            CGPoint(x: origin.x + x * side, y: origin.y + y * side)
+        }
+
+        var blade = Path()
+        blade.move(to: point(0.5, 0.5))
+        blade.addCurve(to: point(0.5, 0.1515),
+                       control1: point(0.5, 0.303),
+                       control2: point(0.424, 0.197))
+        blade.addCurve(to: point(0.5, 0.5),
+                       control1: point(0.576, 0.197),
+                       control2: point(0.5, 0.303))
+        blade.closeSubpath()
+
+        var combined = Path()
+        let centre = CGPoint(x: rect.midX, y: rect.midY)
+        for index in 0..<4 {
+            let rotation = CGAffineTransform(translationX: centre.x, y: centre.y)
+                .rotated(by: Double(index) * .pi / 2)
+                .translatedBy(x: -centre.x, y: -centre.y)
+            combined.addPath(blade, transform: rotation)
+        }
+        return combined
+    }
+}
+
 /// The fan gauge: an arc for how fast it is turning, blades that actually turn at a
 /// speed proportional to the rpm, and the number in the middle.
 ///
@@ -50,12 +85,10 @@ struct FanDial: View {
 
             TimelineView(.animation) { context in
                 let seconds = context.date.timeIntervalSinceReferenceDate
-                Image(systemName: "fan.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(controlled ? Color(red: 0.81, green: 0.90, blue: 1.0) : .white)
-                    .opacity(rpm < 60 ? 0.07 : 0.15)
-                    .frame(width: size * 0.62, height: size * 0.62)
+                FanBlades()
+                    .fill(controlled ? Color(red: 0.81, green: 0.90, blue: 1.0) : .white)
+                    .opacity(rpm < 60 ? 0.07 : 0.16)
+                    .frame(width: size, height: size)
                     .rotationEffect(.degrees(seconds * spinRate))
             }
 

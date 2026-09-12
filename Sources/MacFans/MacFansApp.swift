@@ -105,7 +105,7 @@ struct MainWindow: View {
             GlassSegmented(
                 items: Section.allCases.map { .init(value: $0, title: $0.title) },
                 selection: $section,
-                segmentWidth: 104
+                segmentWidth: nil
             )
 
             Spacer(minLength: 0)

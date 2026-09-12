@@ -14,7 +14,8 @@ struct GlassSegmented<Value: Hashable>: View {
 
     let items: [Item]
     @Binding var selection: Value
-    var segmentWidth: CGFloat = 96
+    /// nil lets each segment size to its own label, as in the design.
+    var segmentWidth: CGFloat? = 96
     var fontSize: CGFloat = 12.5
 
     @Namespace private var namespace
@@ -29,6 +30,7 @@ struct GlassSegmented<Value: Hashable>: View {
                     .font(.system(size: fontSize, weight: .medium))
                     .foregroundStyle(isSelected ? .white : .white.opacity(0.55))
                     .frame(width: segmentWidth)
+                    .padding(.horizontal, segmentWidth == nil ? 16 : 0)
                     .padding(.vertical, 6)
                     .background {
                         if isSelected {
