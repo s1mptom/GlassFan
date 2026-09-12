@@ -37,6 +37,9 @@ struct TimeChart: View {
     var valueFormat: (Double) -> String
 
     @State private var hoverDate: Date?
+    /// Which side of the plot the readout sits on. It moves out of the pointer's
+    /// way: as the pointer nears it, it crosses to the other side.
+    @State private var readoutOnLeft = false
     @State private var traced: CGFloat = Runtime.isPreview ? 1 : 0
 
     private var firstSeries: String? { order.first }
@@ -143,24 +146,41 @@ struct TimeChart: View {
             withAnimation(.easeInOut(duration: 1.5).delay(0.15)) { traced = 1 }
         }
         .chartOverlay { proxy in
-            // The overlay is laid out over the plot area itself, so a pointer
-            // location here is already in plot coordinates.
-            Rectangle()
-                .fill(.clear)
-                .contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        hoverDate = proxy.value(atX: location.x, as: Date.self)
-                    case .ended:
-                        hoverDate = nil
+            // The overlay covers the whole chart, axis labels included, not just
+            // the plot - so the pointer's x has to be taken relative to the plot
+            // frame, or the crosshair lands a label's width to the right of the
+            // pointer. (It did.)
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            guard let plotFrame = proxy.plotFrame else { return }
+                            let plot = geometry[plotFrame]
+                            let x = location.x - plot.minX
+                            hoverDate = proxy.value(atX: x, as: Date.self)
+                            // Hysteresis: cross to the left once the pointer is
+                            // well into the right third, and back once it is well
+                            // into the left third. A single threshold would have
+                            // the readout flapping whenever the pointer sat on it.
+                            let share = x / max(plot.width, 1)
+                            if share > 0.64 { readoutOnLeft = true }
+                            else if share < 0.36 { readoutOnLeft = false }
+                        case .ended:
+                            hoverDate = nil
+                        }
                     }
-                }
+            }
         }
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: readoutOnLeft ? .topLeading : .topTrailing) {
             if let hoverDate, let readout = readout(at: hoverDate) {
                 ChartTooltip(date: hoverDate, entries: readout, format: valueFormat)
                     .padding(6)
+                    // Clear of the y-axis labels when it is on the left.
+                    .padding(.leading, readoutOnLeft ? 38 : 0)
+                    .animation(.easeOut(duration: 0.16), value: readoutOnLeft)
                     // The readout sits above the layer that tracks the pointer.
                     // If it took the pointer, moving onto it ended the hover,
                     // which removed it, which put the pointer back on the chart,
