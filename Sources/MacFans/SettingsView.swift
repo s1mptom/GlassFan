@@ -3,7 +3,8 @@ import FanKit
 
 struct SettingsView: View {
     @Environment(DaemonClient.self) private var client
-    @AppStorage(WindowTranslucency.storageKey) private var translucency: WindowTranslucency = .glassOnly
+    @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
+    @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
 
     private func configBinding() -> Binding<AppConfig>? {
         guard let current = client.draftConfig ?? client.snapshot?.config else { return nil }
@@ -64,18 +65,58 @@ struct SettingsView: View {
     }
 
     private var appearanceCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(L10n.t("Внешний вид", "Appearance"), systemImage: "sparkles")
+        VStack(alignment: .leading, spacing: 14) {
+            Label(L10n.t("Стекло", "Glass"), systemImage: "sparkles")
                 .font(.headline)
-            Text(L10n.t("Насколько окно пропускает то, что за ним.",
-                        "How much of what is behind the window shows through."))
-                .font(.caption)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(L10n.t("Матовость", "Frost"))
+                    Spacer()
+                    Text("\(Int(frost * 100)) %").monospacedDigit().foregroundStyle(.secondary)
+                }
+                Slider(value: $frost, in: GlassStyle.frostRange)
+                HStack {
+                    Text(L10n.t("прозрачное", "clear"))
+                    Spacer()
+                    Text(L10n.t("матовое", "frosted"))
+                }
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-            Picker("", selection: $translucency) {
-                ForEach(WindowTranslucency.allCases) { Text($0.title).tag($0) }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(L10n.t("Тон", "Tone"))
+                    Spacer()
+                    Text(tint == 0 ? L10n.t("нейтральный", "neutral")
+                                   : String(format: "%+.0f %%", tint * 100))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $tint, in: GlassStyle.tintRange)
+                HStack {
+                    Text(L10n.t("темнее", "darker"))
+                    Spacer()
+                    Text(L10n.t("светлее", "lighter"))
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text(L10n.t("Меняется сразу, на окне и на карточках.",
+                            "Applies at once, to the window and the cards."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(L10n.t("Сбросить", "Reset")) {
+                    frost = GlassStyle.defaultFrost
+                    tint = GlassStyle.defaultTint
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+            }
         }
         .glassCard()
     }

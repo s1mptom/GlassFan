@@ -200,7 +200,7 @@ struct StatTile: View {
         .frame(width: 128, alignment: .leading)
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .glassSurface(cornerRadius: 16)
     }
 }
 

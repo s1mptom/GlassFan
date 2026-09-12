@@ -49,8 +49,33 @@ enum Palette {
 extension View {
     /// One glass card, used everywhere so the surfaces stay consistent.
     func glassCard(cornerRadius: CGFloat = 20) -> some View {
-        self.padding(16)
-            .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        modifier(GlassCard(cornerRadius: cornerRadius, padding: 16))
+    }
+
+    /// A glass surface without the card padding, for tiles and chips.
+    func glassSurface(cornerRadius: CGFloat, padding: CGFloat = 0) -> some View {
+        modifier(GlassCard(cornerRadius: cornerRadius, padding: padding))
+    }
+}
+
+/// Applies the user's frost and tint to every glass surface, so the whole interface
+/// moves together instead of the window and the cards drifting apart.
+struct GlassCard: ViewModifier {
+    let cornerRadius: CGFloat
+    let padding: CGFloat
+
+    @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
+    @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            .glassEffect(.regular.tint(GlassStyle.tint(tint)), in: .rect(cornerRadius: cornerRadius))
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(.regularMaterial)
+                    .opacity(frost * 0.85)
+            }
     }
 }
 

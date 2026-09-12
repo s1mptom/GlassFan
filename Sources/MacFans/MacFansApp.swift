@@ -4,14 +4,13 @@ import FanKit
 @main
 struct MacFansApp: App {
     @State private var client = DaemonClient()
-    @AppStorage(WindowTranslucency.storageKey) private var translucency: WindowTranslucency = .glassOnly
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window(L10n.t("MacFans", "MacFans"), id: "main") {
             MainWindow()
                 .environment(client)
-                .containerBackground(translucency.material, for: .window)
+                .containerBackground(for: .window) { GlassBackground() }
                 .task {
                     client.start()
                     NSApplication.shared.activate(ignoringOtherApps: true)

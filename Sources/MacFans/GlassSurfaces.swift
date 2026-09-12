@@ -2,32 +2,43 @@ import SwiftUI
 import AppKit
 import FanKit
 
-/// How much of the desktop shows through the window. A matter of taste and of what
-/// sits behind the window, so it is the user's dial, not a constant of mine.
-enum WindowTranslucency: String, CaseIterable, Identifiable {
-    case dense, medium, clear, glassOnly
+/// The look of the glass, as two dials rather than a handful of presets: how much the
+/// surfaces frost over, and whether they lean light or dark. Both are taste, and taste
+/// depends on the wallpaper behind the window, so neither belongs in a constant.
+enum GlassStyle {
+    static let frostKey = "glassFrost"
+    static let tintKey = "glassTint"
 
-    static let storageKey = "windowTranslucency"
-    var id: String { rawValue }
+    /// 0 leaves the window a clear pane; 1 frosts it right over.
+    static let defaultFrost = 0.35
+    /// Negative darkens, positive lightens, 0 leaves the material as the system draws it.
+    static let defaultTint = 0.0
 
-    var title: String {
-        switch self {
-        case .dense:     return L10n.t("Плотное", "Dense")
-        case .medium:    return L10n.t("Среднее", "Medium")
-        case .clear:     return L10n.t("Прозрачное", "Clear")
-        case .glassOnly: return L10n.t("Только стекло", "Glass only")
-        }
+    static let frostRange: ClosedRange<Double> = 0...1
+    static let tintRange: ClosedRange<Double> = -1...1
+
+    /// Asymmetric on purpose: a wash of white reads much stronger than the same amount
+    /// of black, so lightening is given a shorter lever.
+    static func tint(_ amount: Double) -> Color {
+        amount >= 0 ? .white.opacity(amount * 0.22) : .black.opacity(-amount * 0.40)
     }
+}
 
-    var material: AnyShapeStyle {
-        switch self {
-        case .dense:  return AnyShapeStyle(.regularMaterial)
-        case .medium: return AnyShapeStyle(.thinMaterial)
-        case .clear:  return AnyShapeStyle(.ultraThinMaterial)
-        // No window background at all: the desktop is right there and only the cards
-        // are glass. As transparent as the window gets while staying usable.
-        case .glassOnly: return AnyShapeStyle(.clear)
+/// Window backing. Drawn as a real view rather than a material shape style, because a
+/// shape style cannot be dimmed or tinted by degrees.
+struct GlassBackground: View {
+    @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
+    @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.regularMaterial)
+                .opacity(frost)
+            Rectangle()
+                .fill(GlassStyle.tint(tint))
         }
+        .ignoresSafeArea()
     }
 }
 
