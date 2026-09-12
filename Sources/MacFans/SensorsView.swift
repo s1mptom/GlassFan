@@ -37,7 +37,7 @@ struct SensorsView: View {
             .padding(.vertical, 14)
 
             ScrollView {
-                GlassEffectContainer(spacing: 16) {
+                Group {
                     VStack(spacing: 16) {
                     ForEach(groups, id: \.0) { group, sensors in
                         VStack(alignment: .leading, spacing: 10) {

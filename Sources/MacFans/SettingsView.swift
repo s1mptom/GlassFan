@@ -16,7 +16,7 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            GlassEffectContainer(spacing: 18) {
+            Group {
                 VStack(alignment: .leading, spacing: 18) {
                     if let config = configBinding() {
                         safetyCard(config)
@@ -105,8 +105,8 @@ struct SettingsView: View {
             }
 
             HStack {
-                Text(L10n.t("Меняется сразу, на окне и на карточках.",
-                            "Applies at once, to the window and the cards."))
+                Text(L10n.t("Регулирует только подложку окна. Карточки всегда максимально прозрачные.",
+                            "Adjusts the window backing only. The cards stay as clear as glass gets."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()

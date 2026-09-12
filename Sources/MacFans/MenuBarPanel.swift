@@ -7,7 +7,7 @@ struct MenuBarPanel: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        GlassEffectContainer(spacing: 14) {
+        Group {
             VStack(alignment: .leading, spacing: 14) {
                 header
 

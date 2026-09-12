@@ -39,7 +39,7 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            GlassEffectContainer(spacing: 18) {
+            Group {
                 VStack(alignment: .leading, spacing: 14) {
                     filters
                     tiles
@@ -251,16 +251,22 @@ struct DaemonMissingNotice: View {
                 Text(command)
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
-                Button(copied ? L10n.t("Скопировано", "Copied") : L10n.t("Копировать", "Copy")) {
+                Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(command, forType: .string)
                     copied = true
+                } label: {
+                    // Fixed width: a label that grows on click drags the button out
+                    // from under the pointer.
+                    Text(copied ? L10n.t("Скопировано", "Copied") : L10n.t("Копировать", "Copy"))
+                        .frame(width: 92)
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
+                .animation(.none, value: copied)
             }
             .padding(10)
-            .glassEffect(.regular, in: .rect(cornerRadius: 12))
+            .glassSurface(cornerRadius: 12)
         }
         .padding(.vertical, 18)
     }

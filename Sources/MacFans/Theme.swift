@@ -58,24 +58,17 @@ extension View {
     }
 }
 
-/// Applies the user's frost and tint to every glass surface, so the whole interface
-/// moves together instead of the window and the cards drifting apart.
+/// Cards stay as clear as glass gets. Frost and tone belong to the window backing
+/// alone: dimming the cards as well only made the readable part of the interface
+/// murky without making the window any more see-through.
 struct GlassCard: ViewModifier {
     let cornerRadius: CGFloat
     let padding: CGFloat
 
-    @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
-    @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
-
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .glassEffect(.regular.tint(GlassStyle.tint(tint)), in: .rect(cornerRadius: cornerRadius))
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.regularMaterial)
-                    .opacity(frost * 0.85)
-            }
+            .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
     }
 }
 

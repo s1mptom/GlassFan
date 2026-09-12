@@ -124,7 +124,7 @@ struct ChartTooltip: View {
             }
         }
         .padding(10)
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        .glassSurface(cornerRadius: 12)
         .frame(maxWidth: 240)
     }
 }

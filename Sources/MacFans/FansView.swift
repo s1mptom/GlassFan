@@ -6,7 +6,7 @@ struct FansView: View {
 
     var body: some View {
         ScrollView {
-            GlassEffectContainer(spacing: 18) {
+            Group {
                 VStack(spacing: 18) {
                     ForEach(client.snapshot?.fans ?? []) { fan in
                         FanCard(fan: fan)
@@ -178,7 +178,7 @@ struct FanCard: View {
                         }
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .capsule)
+                        .glassSurface(cornerRadius: 999)
                     }
                 }
                 Text(L10n.t("Кривую ведёт самый горячий из выбранных.",

@@ -140,7 +140,7 @@ struct CurveEditor: View {
                     .monospacedDigit()
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .glassEffect(.regular, in: .capsule)
+                    .glassSurface(cornerRadius: 999)
                     .position(x: min(marker.x + 62, plot.maxX - 20), y: max(marker.y - 16, plot.minY + 10))
             }
         }
