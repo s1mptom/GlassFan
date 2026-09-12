@@ -41,6 +41,51 @@ if CommandLine.arguments.contains("--stop-test") {
     exit(0)
 }
 
+/// Hardware experiment, part two: is a fan *stable* below the declared minimum,
+/// or does it hunt - stop, restart, stop? Holds each of a few sub-minimum
+/// targets for a while, samples the actual rpm every second, and reports the
+/// spread and every stop and restart seen. Releases the fan afterwards.
+if CommandLine.arguments.contains("--stall-test") {
+    do {
+        let smc = try SMCDevice()
+        let hardware = FanHardware(smc: smc)
+        let hold = 40
+        for fan in hardware.fans {
+            let i = fan.index
+            print(String(format: "fan %d (SMC minimum %.0f)", i, fan.limits.minRPM))
+            defer { try? hardware.release(i) }
+            for target in [1300.0, 1000.0, 600.0] {
+                try hardware.setTarget(i, rpm: target)
+                var samples: [Double] = []
+                var stops = 0, restarts = 0
+                var wasRunning = false
+                for _ in 0..<hold {
+                    Thread.sleep(forTimeInterval: 1)
+                    let rpm = hardware.actualRPM(i) ?? -1
+                    samples.append(rpm)
+                    let running = rpm > 0
+                    if wasRunning && !running { stops += 1 }
+                    if !wasRunning && running && !samples.dropLast().isEmpty { restarts += 1 }
+                    wasRunning = running
+                }
+                let settled = Array(samples.suffix(hold - 10))   // after spin-up
+                let lo = settled.min() ?? 0, hi = settled.max() ?? 0
+                let mean = settled.reduce(0, +) / Double(max(settled.count, 1))
+                let trace = samples.enumerated().filter { $0.offset % 4 == 0 }
+                    .map { String(format: "%.0f", $0.element) }.joined(separator: " ")
+                print(String(format: "  target %4.0f  settled min %4.0f  max %4.0f  mean %4.0f  stops %d  restarts %d",
+                             target, lo, hi, mean, stops, restarts))
+                print("           every 4s: \(trace)")
+                fflush(stdout)
+            }
+        }
+    } catch {
+        print("stall-test failed: \(error)")
+        exit(1)
+    }
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--probe") {
     do {
         let smc = try SMCDevice()

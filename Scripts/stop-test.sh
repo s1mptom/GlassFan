@@ -6,7 +6,8 @@
 # and what the SMC kept as the target, releases every fan back to the system,
 # and restarts the daemon - on any exit, including a failure or Ctrl-C.
 #
-# Needs root for the SMC:  sudo Scripts/stop-test.sh
+# Needs root for the SMC:  sudo Scripts/stop-test.sh            (targets 1000/500/0, 5 s each)
+#                          sudo Scripts/stop-test.sh --stall-test  (hold 1300/1000/600 for 40 s each, per second)
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/debug/fanctld"
@@ -23,4 +24,4 @@ trap restore EXIT
 
 launchctl bootout system/com.macfans.fanctld 2>/dev/null; sleep 1
 echo "daemon stopped (fanctld running: $(pgrep -x fanctld | tr '\n' ' ')none)"
-"$BIN" --stop-test
+"$BIN" "${1:---stop-test}"
