@@ -291,29 +291,36 @@ private struct SpinningDisc: NSViewRepresentable {
     let paused: Bool
 
     final class Coordinator {
+        /// The layer that turns. A sublayer, not the view's own: AppKit re-sets
+        /// the geometry of a view's root layer on every layout pass and assumes
+        /// its anchor point is the corner, so an anchor moved to the centre for
+        /// the rotation put the centre of the disc at the corner of the view -
+        /// the disc sat half a dial down and to the left of its gauge. A sublayer
+        /// is ours alone.
+        let disc = CALayer()
         var image: CGImage?
         var rate: Double = 0
+        var size: CGFloat = 0
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: size, height: size))
-        let layer = CALayer()
-        layer.contentsGravity = .resizeAspect
-        layer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
-        layer.frame = view.bounds
-        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        layer.position = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
-        view.layer = layer
+        let root = CALayer()
+        view.layer = root
         view.wantsLayer = true
-        apply(to: layer, context.coordinator)
+        let disc = context.coordinator.disc
+        disc.contentsGravity = .resizeAspect
+        disc.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        disc.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        root.addSublayer(disc)
+        apply(to: disc, context.coordinator)
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {
-        guard let layer = view.layer else { return }
-        apply(to: layer, context.coordinator)
+        apply(to: context.coordinator.disc, context.coordinator)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
@@ -325,6 +332,11 @@ private struct SpinningDisc: NSViewRepresentable {
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
 
+        if state.size != size {
+            state.size = size
+            layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+            layer.position = CGPoint(x: size / 2, y: size / 2)
+        }
         if state.image !== image {
             state.image = image
             layer.contents = image
