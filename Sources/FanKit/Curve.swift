@@ -66,7 +66,10 @@ public struct FanCurve: Codable, Equatable, Sendable {
     /// A sane starting shape for a fan that idles at `minRPM` and tops out at `maxRPM`.
     public static func defaultCurve(minRPM: Double, maxRPM: Double) -> FanCurve {
         FanCurve(points: [
-            CurvePoint(temperature: 45, rpm: minRPM),
+            // At rest while cool: the hardware stops at zero, as the system's
+            // own controller stops it.
+            CurvePoint(temperature: 40, rpm: 0),
+            CurvePoint(temperature: 50, rpm: minRPM),
             CurvePoint(temperature: 65, rpm: minRPM + (maxRPM - minRPM) * 0.25),
             CurvePoint(temperature: 80, rpm: minRPM + (maxRPM - minRPM) * 0.6),
             CurvePoint(temperature: 95, rpm: maxRPM),

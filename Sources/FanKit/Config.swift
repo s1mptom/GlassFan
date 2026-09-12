@@ -9,7 +9,8 @@ public enum FanMode: String, Codable, Sendable, CaseIterable {
     case curve
 }
 
-/// The rpm range the SMC itself reports for a fan. Targets are always clamped to it.
+/// The rpm range the SMC itself reports for a fan. The maximum is enforced; the
+/// minimum is what the SMC recommends - see `clamp`.
 public struct FanLimits: Codable, Equatable, Sendable {
     public var minRPM: Double
     public var maxRPM: Double
@@ -19,8 +20,16 @@ public struct FanLimits: Codable, Equatable, Sendable {
         self.maxRPM = maxRPM
     }
 
+    /// Into what the hardware will actually take: zero up to the maximum.
+    ///
+    /// `minRPM` is what the SMC declares, and it used to be the floor here. It
+    /// is advice. Tested on an M1 Max with the daemon stopped: asked for 1000
+    /// the fan ran at about 1300, asked for 500 at about 1190, asked for 0 it
+    /// stopped - and the SMC kept every one of those targets as written. So a
+    /// curve may go to zero, which is what lets a fan rest when the machine is
+    /// cool, the way the system's own controller rests it.
     public func clamp(_ rpm: Double) -> Double {
-        Swift.min(Swift.max(rpm, minRPM), maxRPM)
+        Swift.min(Swift.max(rpm, 0), maxRPM)
     }
 }
 

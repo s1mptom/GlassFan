@@ -53,14 +53,37 @@ struct ControllerTests {
         #expect(c.update(temperatures: ["TG0B": 70], emergencyTemp: 95) == nil)
     }
 
-    @Test("clamps the result into the fan's own limits")
+    /// The declared minimum is not a floor. Tested on the hardware: asked for
+    /// targets under it the fan ran slow, asked for zero it stopped, and the
+    /// SMC kept each target as written. Only the maximum is enforced.
+    @Test("caps the result at the fan's maximum and lets it fall to zero")
     func clamps() {
         var s = makeSettings()
         s.curve = FanCurve(points: [CurvePoint(temperature: 40, rpm: 100),
                                     CurvePoint(temperature: 80, rpm: 9000)])
         var c = FanController(settings: s, limits: limits)
-        #expect(c.update(temperatures: ["TCMz": 20], emergencyTemp: 95) == 1499)
+        #expect(c.update(temperatures: ["TCMz": 20], emergencyTemp: 95) == 100)
         #expect(c.update(temperatures: ["TCMz": 99], emergencyTemp: 95) == 5348)
+    }
+
+    @Test("a curve point at zero stops the fan rather than idling it at the minimum")
+    func restsAtZero() {
+        var s = makeSettings()
+        s.smoothing = 0
+        s.curve = FanCurve(points: [CurvePoint(temperature: 40, rpm: 0),
+                                    CurvePoint(temperature: 60, rpm: 3000)])
+        var c = FanController(settings: s, limits: limits)
+        #expect(c.update(temperatures: ["TCMz": 30], emergencyTemp: 95) == 0)
+        #expect(c.update(temperatures: ["TCMz": 50], emergencyTemp: 95) == 1500)
+    }
+
+    @Test("a fixed target below the declared minimum is passed through, not raised")
+    func fixedBelowMinimum() {
+        var s = makeSettings()
+        s.mode = .fixed
+        s.fixedRPM = 800
+        var c = FanController(settings: s, limits: limits)
+        #expect(c.update(temperatures: ["TCMz": 50], emergencyTemp: 95) == 800)
     }
 
     @Test("emergency temperature overrides the curve with full speed")

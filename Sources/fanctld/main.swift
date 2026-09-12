@@ -2,6 +2,45 @@ import Foundation
 import FanKit
 
 // A probe mode that needs no root, so the hardware can be inspected before installing.
+/// Hardware experiment: what does the SMC do with a target below F?Mn? Writes a
+/// descending set of targets to each fan, reads back the actual rpm and what the
+/// SMC kept as the target, and releases the fan to the system afterwards
+/// whatever happens. Run with the daemon stopped, or the two will argue.
+if CommandLine.arguments.contains("--stop-test") {
+    do {
+        let smc = try SMCDevice()
+        let hardware = FanHardware(smc: smc)
+        func line(_ fan: Int, _ label: String) {
+            print(String(format: "  fan %d  %-14@ actual %5.0f   target kept %5.0f   mode %.0f",
+                         fan, label,
+                         hardware.actualRPM(fan) ?? -1,
+                         hardware.targetRPM(fan) ?? -1,
+                         hardware.rawMode(fan) ?? -1))
+            fflush(stdout)
+        }
+        for fan in hardware.fans {
+            let i = fan.index
+            print(String(format: "fan %d: SMC limits %.0f-%.0f", i, fan.limits.minRPM, fan.limits.maxRPM))
+            line(i, "before")
+            defer { try? hardware.release(i); line(i, "released") }
+            for target in [1000.0, 500.0, 0.0] {
+                do {
+                    try hardware.setTarget(i, rpm: target)
+                } catch {
+                    print("  fan \(i)  write \(Int(target)) REFUSED: \(error)")
+                    continue
+                }
+                Thread.sleep(forTimeInterval: 5)
+                line(i, "asked \(Int(target))")
+            }
+        }
+    } catch {
+        print("stop-test failed: \(error)")
+        exit(1)
+    }
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--probe") {
     do {
         let smc = try SMCDevice()

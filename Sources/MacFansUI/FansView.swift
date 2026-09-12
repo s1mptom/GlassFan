@@ -166,8 +166,9 @@ struct FansView: View {
                     fontSize: 12
                 )
                 Spacer()
-                Text("\(Format.rpm(fan.limits.minRPM)) – \(Format.rpm(fan.limits.maxRPM)) "
-                     + L10n.t("об/мин", "rpm"))
+                Text("0 – \(Format.rpm(fan.limits.maxRPM)) " + L10n.t("об/мин", "rpm")
+                     + L10n.t(" · минимум SMC \(Format.rpm(fan.limits.minRPM))",
+                              " · SMC minimum \(Format.rpm(fan.limits.minRPM))"))
                     .font(.system(size: 11.5))
                     .monospacedDigit()
                     .foregroundStyle(Palette.ink.opacity(0.42))
@@ -235,7 +236,7 @@ struct FansView: View {
             Slider(value: Binding(
                 get: { settings.wrappedValue.fixedRPM },
                 set: { settings.wrappedValue.fixedRPM = ($0 / 50).rounded() * 50 }
-            ), in: fan.limits.minRPM...fan.limits.maxRPM) { editing in
+            ), in: 0...fan.limits.maxRPM) { editing in
                 if !editing { client.commit() }
             }
             .tint(Palette.calm)

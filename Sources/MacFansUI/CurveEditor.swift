@@ -23,6 +23,7 @@ struct CurveEditor: View {
 
             ZStack(alignment: .topLeading) {
                 grid(in: plot)
+                minimumGuide(in: plot)
                 curveShape(in: plot)
                 liveMarker(in: plot)
                 handles(in: plot)
@@ -62,8 +63,7 @@ struct CurveEditor: View {
     private func position(_ point: CurvePoint, in plot: CGRect) -> CGPoint {
         let x = plot.minX + plot.width *
             (point.temperature - tempRange.lowerBound) / (tempRange.upperBound - tempRange.lowerBound)
-        let y = plot.maxY - plot.height *
-            (point.rpm - limits.minRPM) / max(limits.maxRPM - limits.minRPM, 1)
+        let y = plot.maxY - plot.height * point.rpm / max(limits.maxRPM, 1)
         return CGPoint(x: x, y: y)
     }
 
@@ -72,7 +72,7 @@ struct CurveEditor: View {
         let ratioY = min(max((plot.maxY - location.y) / plot.height, 0), 1)
         return CurvePoint(
             temperature: (tempRange.lowerBound + ratioX * (tempRange.upperBound - tempRange.lowerBound)).rounded(),
-            rpm: (limits.minRPM + ratioY * (limits.maxRPM - limits.minRPM)).rounded()
+            rpm: (ratioY * limits.maxRPM).rounded()
         )
     }
 
@@ -94,6 +94,28 @@ struct CurveEditor: View {
                                with: .color(line), lineWidth: 1)
             }
         }
+    }
+
+    /// Where the SMC says the fan's minimum is. It is advice, not a floor - the
+    /// hardware was asked for 1000, 500 and 0 and did as it was told - so the
+    /// scale runs to zero and this line just says where "minimum" would have
+    /// been. Below it the fan runs slow and, at zero, stops.
+    private func minimumGuide(in plot: CGRect) -> some View {
+        let y = position(CurvePoint(temperature: tempRange.lowerBound, rpm: limits.minRPM), in: plot).y
+        return ZStack(alignment: .topLeading) {
+            Path { path in
+                path.move(to: CGPoint(x: plot.minX, y: y))
+                path.addLine(to: CGPoint(x: plot.maxX, y: y))
+            }
+            .stroke(Palette.ink.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+            Text(L10n.t("\(Format.rpm(limits.minRPM)) · минимум SMC",
+                        "\(Format.rpm(limits.minRPM)) · SMC minimum"))
+                .font(.system(size: 9.5))
+                .monospacedDigit()
+                .foregroundStyle(Palette.ink.opacity(0.32))
+                .position(x: plot.maxX - 58, y: y - 9)
+        }
+        .allowsHitTesting(false)
     }
 
     private func curveShape(in plot: CGRect) -> some View {
@@ -206,7 +228,7 @@ struct CurveEditor: View {
                               y: plot.maxY + 13)
             }
             ForEach([0.0, 0.5, 1.0], id: \.self) { fraction in
-                Text(Format.rpm(limits.minRPM + fraction * (limits.maxRPM - limits.minRPM)))
+                Text(Format.rpm(fraction * limits.maxRPM))
                     .font(.system(size: 10))
                     .monospacedDigit()
                     .foregroundStyle(Palette.ink.opacity(0.3))
