@@ -5,6 +5,7 @@ struct FansView: View {
     @Environment(DaemonClient.self) private var client
     @State private var selected: Int = 0
     @State private var showingSensorPicker = false
+    @State private var hoveredFan: Int?
 
     private var fans: [FanReading] { client.snapshot?.fans ?? [] }
     private var fan: FanReading? { fans.first { $0.index == selected } ?? fans.first }
@@ -32,10 +33,10 @@ struct FansView: View {
             ForEach(fans) { item in
                 fanRow(item)
             }
-            Spacer(minLength: 0)
             if let fan, settings(for: fan).mode == .curve {
                 sensorBox(fan)
             }
+            Spacer(minLength: 0)
         }
         .frame(width: 212)
     }
@@ -44,32 +45,42 @@ struct FansView: View {
         let isSelected = item.index == (fan?.index ?? -1)
         return HStack(spacing: 14) {
             FanDial(rpm: item.actualRPM, limits: item.limits, controlled: item.forced,
-                    size: 58, showsCaption: false)
+                    size: 58, showsCaption: false, showsValue: false)
             VStack(alignment: .leading, spacing: 1) {
                 Text(L10n.t("Вентилятор \(item.index + 1)", "Fan \(item.index + 1)"))
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Palette.ink.opacity(0.5))
                 Text(Format.rpm(item.actualRPM))
                     .font(.system(size: 21, weight: .semibold))
                     .monospacedDigit()
-                    .foregroundStyle(item.forced ? .white : .white.opacity(0.86))
+                    .foregroundStyle(item.forced ? Palette.ink : Palette.ink.opacity(0.86))
                 Text(modeCaption(item))
                     .font(.system(size: 10.5))
-                    .foregroundStyle(item.forced ? Palette.calm : .white.opacity(0.4))
+                    .foregroundStyle(item.forced ? Palette.calm : Palette.ink.opacity(0.4))
             }
             Spacer(minLength: 0)
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.white.opacity(isSelected ? 0.075 : 0.03))
+                .fill(Palette.ink.opacity(isSelected ? 0.075
+                                          : (hoveredFan == item.index ? 0.055 : 0.03)))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(.white.opacity(isSelected ? 0.16 : 0.07), lineWidth: 0.5))
+                    .strokeBorder(Palette.ink.opacity(isSelected ? 0.16
+                                                      : (hoveredFan == item.index ? 0.12 : 0.07)),
+                                  lineWidth: 0.5))
         )
         .contentShape(Rectangle())
+        .onHover { inside in
+            withAnimation(.easeOut(duration: 0.12)) {
+                hoveredFan = inside ? item.index : (hoveredFan == item.index ? nil : hoveredFan)
+            }
+        }
         .onTapGesture {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selected = item.index }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     private func modeCaption(_ item: FanReading) -> String {
@@ -95,7 +106,7 @@ struct FansView: View {
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(Palette.ink.opacity(0.6))
                 .popover(isPresented: $showingSensorPicker, arrowEdge: .trailing) {
                     SensorPicker(selection: binding(for: fan).sensorKeys)
                         .environment(client)
@@ -119,15 +130,15 @@ struct FansView: View {
                 }
                 Text(L10n.t("Кривую ведёт самый горячий", "The hottest one drives the curve"))
                     .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(Palette.ink.opacity(0.3))
             }
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.white.opacity(0.04))
+                .fill(Palette.ink.opacity(0.04))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+                    .strokeBorder(Palette.ink.opacity(0.08), lineWidth: 0.5))
         )
     }
 
@@ -152,7 +163,7 @@ struct FansView: View {
                      + L10n.t("об/мин", "rpm"))
                     .font(.system(size: 11.5))
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.42))
+                    .foregroundStyle(Palette.ink.opacity(0.42))
             }
 
             // One container whose size never depends on the mode, so switching modes
@@ -189,10 +200,10 @@ struct FansView: View {
         VStack(spacing: 10) {
             Image(systemName: "wind")
                 .font(.system(size: 30, weight: .light))
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(Palette.ink.opacity(0.3))
             Text(L10n.t("Вентилятором управляет система", "The system is in charge of this fan"))
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(Palette.ink.opacity(0.55))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(panelBackground)
@@ -204,14 +215,17 @@ struct FansView: View {
             Text(Format.rpm(settings.wrappedValue.fixedRPM))
                 .font(.system(size: 56, weight: .medium))
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(Palette.ink)
             Text(L10n.t("об/мин", "rpm"))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(Palette.ink.opacity(0.4))
                 .offset(y: -18)
-            Slider(value: settings.fixedRPM,
-                   in: fan.limits.minRPM...fan.limits.maxRPM,
-                   step: 50) { editing in
+            // Rounded in the binding rather than declared as a step, which would
+            // have the control draw a tick for every fifty rpm across the range.
+            Slider(value: Binding(
+                get: { settings.wrappedValue.fixedRPM },
+                set: { settings.wrappedValue.fixedRPM = ($0 / 50).rounded() * 50 }
+            ), in: fan.limits.minRPM...fan.limits.maxRPM) { editing in
                 if !editing { client.commit() }
             }
             .tint(Palette.calm)
@@ -228,7 +242,7 @@ struct FansView: View {
                 VStack(spacing: 14) {
                     Text(L10n.t("Кривая ещё не задана", "No curve yet"))
                         .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(Palette.ink.opacity(0.55))
                     Button(L10n.t("Создать кривую", "Create a curve")) {
                         settings.wrappedValue.curve = .defaultCurve(minRPM: fan.limits.minRPM,
                                                                     maxRPM: fan.limits.maxRPM)
@@ -253,9 +267,9 @@ struct FansView: View {
 
     private var panelBackground: some View {
         RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(.white.opacity(0.05))
+            .fill(Palette.ink.opacity(0.05))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(.white.opacity(0.11), lineWidth: 0.5))
+                .strokeBorder(Palette.ink.opacity(0.11), lineWidth: 0.5))
     }
 
     // MARK: Config plumbing
@@ -303,36 +317,115 @@ struct SensorPicker: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TextField(L10n.t("Поиск датчика", "Search sensors"), text: $search)
-                .textFieldStyle(.roundedBorder)
-                .padding(10)
+            header
 
-            List {
+            Rectangle()
+                .fill(Palette.ink.opacity(0.08))
+                .frame(height: 0.5)
+
+            if groups.isEmpty {
+                empty
+            } else {
+                list
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(spacing: 10) {
+            GlassSearchField(
+                placeholder: L10n.t("Поиск датчика", "Search sensors"),
+                text: $search
+            )
+
+            HStack {
+                Text(selection.isEmpty
+                     ? L10n.t("Ни одного не выбрано", "None chosen")
+                     : L10n.t("Выбрано: \(selection.count)", "\(selection.count) chosen"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.ink.opacity(0.4))
+                Spacer()
+                if !selection.isEmpty {
+                    Button(L10n.t("Снять все", "Clear all")) { selection.removeAll() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.calm)
+                }
+            }
+        }
+        .padding(12)
+    }
+
+    private var empty: some View {
+        VStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 20, weight: .light))
+                .foregroundStyle(Palette.ink.opacity(0.25))
+            Text(L10n.t("Ничего не нашлось", "Nothing matches"))
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink.opacity(0.4))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var list: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(groups, id: \.0) { group, sensors in
-                    SwiftUI.Section(group.title) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        SectionCaption(text: group.title)
+                            .padding(.leading, 8)
+                            .padding(.bottom, 4)
                         ForEach(sensors) { sensor in
-                            Toggle(isOn: Binding(
-                                get: { selection.contains(sensor.key) },
-                                set: { isOn in
-                                    if isOn { selection.append(sensor.key) }
-                                    else { selection.removeAll { $0 == sensor.key } }
-                                }
-                            )) {
-                                HStack {
-                                    Text(SensorCatalog.info(for: sensor.key).name)
-                                    Text(sensor.key)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                    Spacer()
-                                    Text(Format.temperatureFine(sensor.value))
-                                        .monospacedDigit()
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                            row(sensor)
                         }
                     }
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 12)
         }
+        .scrollContentBackground(.hidden)
+    }
+
+    /// The whole row is the hit target, not a checkbox the width of a pea.
+    private func row(_ sensor: SensorReading) -> some View {
+        let isOn = selection.contains(sensor.key)
+        return Button {
+            if isOn { selection.removeAll { $0 == sensor.key } }
+            else { selection.append(sensor.key) }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(isOn ? Palette.calm : Palette.ink.opacity(0.22))
+                    .frame(width: 14)
+
+                Text(SensorCatalog.info(for: sensor.key).name)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink.opacity(isOn ? 0.95 : 0.78))
+                    .lineLimit(1)
+
+                Text(sensor.key)
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.ink.opacity(0.28))
+
+                Spacer(minLength: 8)
+
+                Text(Format.temperatureFine(sensor.value))
+                    .font(.system(size: 11.5))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.ink.opacity(0.55))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isOn ? Palette.calm.opacity(0.10) : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

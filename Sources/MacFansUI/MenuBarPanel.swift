@@ -15,7 +15,7 @@ struct MenuBarPanel: View {
                 fanRow
                 modeSwitch
                 hottestSensors
-                Divider().overlay(.white.opacity(0.09))
+                Divider().overlay(Palette.ink.opacity(0.09))
             } else {
                 notRunning
             }
@@ -43,7 +43,7 @@ struct MenuBarPanel: View {
                 Text(client.isConnected ? L10n.t("на связи", "connected")
                                         : L10n.t("нет связи", "offline"))
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
             }
         }
     }
@@ -53,11 +53,11 @@ struct MenuBarPanel: View {
             ForEach(client.snapshot?.fans ?? []) { fan in
                 HStack(spacing: 11) {
                     FanDial(rpm: fan.actualRPM, limits: fan.limits, controlled: fan.forced,
-                            size: 40, showsCaption: false)
+                            size: 40, showsCaption: false, showsValue: false)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(L10n.t("Вент. \(fan.index + 1)", "Fan \(fan.index + 1)"))
                             .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink.opacity(0.5))
                         Text(Format.rpm(fan.actualRPM))
                             .font(.system(size: 17, weight: .semibold))
                             .monospacedDigit()
@@ -68,9 +68,9 @@ struct MenuBarPanel: View {
                 .padding(.vertical, 11)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(.white.opacity(0.07))
+                        .fill(Palette.ink.opacity(0.07))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+                            .strokeBorder(Palette.ink.opacity(0.12), lineWidth: 0.5))
                 )
             }
         }
@@ -105,12 +105,12 @@ struct MenuBarPanel: View {
                 HStack(spacing: 10) {
                     Text(SensorCatalog.info(for: sensor.key).name)
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
                         .frame(width: 124, alignment: .leading)
                         .lineLimit(1)
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(.white.opacity(0.08))
+                            Capsule().fill(Palette.ink.opacity(0.08))
                             Capsule()
                                 .fill(sensor.value > 70 ? Palette.heat : Palette.calm)
                                 .frame(width: max(geometry.size.width
@@ -139,7 +139,7 @@ struct MenuBarPanel: View {
             Text(L10n.t("Открой окно и нажми «Установить» — macOS спросит пароль.",
                         "Open the window and press Install; macOS will ask for your password."))
                 .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(Palette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

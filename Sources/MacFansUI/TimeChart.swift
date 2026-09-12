@@ -29,7 +29,7 @@ struct TimeChart: View {
     var valueFormat: (Double) -> String
 
     @State private var hoverDate: Date?
-    @State private var traced: CGFloat = 0
+    @State private var traced: CGFloat = Runtime.isPreview ? 1 : 0
 
     private var firstSeries: String? { order.first }
 
@@ -52,9 +52,17 @@ struct TimeChart: View {
                         x: .value(L10n.t("Время", "Time"), point.date),
                         y: .value(unit, point.value)
                     )
+                    // Fading to nothing over the full height left a wash dense enough
+                    // to sit on top of the cooler series; most of the fall now happens
+                    // in the first half.
                     .foregroundStyle(
-                        LinearGradient(colors: [Palette.color(0).opacity(0.26), .clear],
-                                       startPoint: .top, endPoint: .bottom)
+                        LinearGradient(
+                            stops: [
+                                .init(color: Palette.color(0).opacity(0.22), location: 0),
+                                .init(color: Palette.color(0).opacity(0.05), location: 0.4),
+                                .init(color: .clear, location: 1),
+                            ],
+                            startPoint: .top, endPoint: .bottom)
                     )
                 }
             }
@@ -71,7 +79,7 @@ struct TimeChart: View {
 
             if let hoverDate {
                 RuleMark(x: .value(L10n.t("Время", "Time"), hoverDate))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(Palette.ink.opacity(0.3))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
             }
         }
@@ -80,24 +88,24 @@ struct TimeChart: View {
         .chartLegend(.hidden)
         .chartYAxis {
             AxisMarks(position: .leading) { value in
-                AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                AxisGridLine().foregroundStyle(Palette.ink.opacity(0.06))
                 AxisValueLabel {
                     if let number = value.as(Double.self) {
                         Text(valueFormat(number))
                             .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.32))
+                            .foregroundStyle(Palette.ink.opacity(0.32))
                     }
                 }
             }
         }
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 5)) { value in
-                AxisGridLine().foregroundStyle(.white.opacity(0.05))
+                AxisGridLine().foregroundStyle(Palette.ink.opacity(0.05))
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
                         Text(date, format: .dateTime.hour().minute())
                             .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.32))
+                            .foregroundStyle(Palette.ink.opacity(0.32))
                     }
                 }
             }
@@ -108,6 +116,7 @@ struct TimeChart: View {
             }
         }
         .onAppear {
+            guard !Runtime.isPreview else { return }
             withAnimation(.easeInOut(duration: 1.5).delay(0.15)) { traced = 1 }
         }
         .chartOverlay { proxy in
@@ -158,17 +167,17 @@ struct ChartTooltip: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(date, format: .dateTime.hour().minute().second())
                 .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(Palette.ink.opacity(0.45))
             ForEach(entries.indices, id: \.self) { index in
                 let entry = entries[index]
                 HStack(spacing: 7) {
                     Capsule().fill(entry.1).frame(width: 12, height: 2.5)
-                    Text(entry.0).font(.system(size: 11)).foregroundStyle(.white.opacity(0.85))
+                    Text(entry.0).font(.system(size: 11)).foregroundStyle(Palette.ink.opacity(0.85))
                     Spacer(minLength: 10)
                     Text(format(entry.2))
                         .font(.system(size: 11))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.ink)
                 }
             }
         }
@@ -194,18 +203,18 @@ struct ChartLegend: View {
                         .frame(width: 13, height: 2.5)
                     Text(names[index])
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(Palette.ink.opacity(0.72))
                     Text(format(values.indices.contains(index) ? values[index] : nil))
                         .font(.system(size: 11.5))
                         .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.42))
+                        .foregroundStyle(Palette.ink.opacity(0.42))
                 }
             }
             Spacer(minLength: 8)
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.28))
+                    .foregroundStyle(Palette.ink.opacity(0.28))
             }
         }
     }

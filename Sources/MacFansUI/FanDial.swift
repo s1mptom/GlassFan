@@ -47,6 +47,9 @@ struct FanDial: View {
     let controlled: Bool
     var size: CGFloat = 132
     var showsCaption = true
+    /// At sidebar size the reading is already spelled out next to the dial, and a
+    /// second copy inside it just crowds the blades.
+    var showsValue = true
 
     /// Share of the fan's top speed, not of the span above its minimum: measured from
     /// the minimum, an idling fan fills under one percent of the arc and the dial reads
@@ -67,14 +70,14 @@ struct FanDial: View {
             ? AnyShapeStyle(AngularGradient(
                 colors: [Palette.calm, Palette.series[2], Palette.calm],
                 center: .center))
-            : AnyShapeStyle(Color.white.opacity(0.42))
+            : AnyShapeStyle(Palette.ink.opacity(0.42))
     }
 
     var body: some View {
         ZStack {
             Circle()
                 .trim(from: 0, to: 0.75)
-                .stroke(.white.opacity(0.09), style: StrokeStyle(lineWidth: size * 0.023, lineCap: .round))
+                .stroke(Palette.ink.opacity(0.09), style: StrokeStyle(lineWidth: size * 0.023, lineCap: .round))
                 .rotationEffect(.degrees(135))
 
             Circle()
@@ -86,25 +89,35 @@ struct FanDial: View {
             TimelineView(.animation) { context in
                 let seconds = context.date.timeIntervalSinceReferenceDate
                 FanBlades()
-                    .fill(controlled ? Color(red: 0.81, green: 0.90, blue: 1.0) : .white)
+                    .fill(controlled ? Palette.blade : Palette.ink)
                     .opacity(rpm < 60 ? 0.07 : 0.16)
                     .frame(width: size, height: size)
                     .rotationEffect(.degrees(seconds * spinRate))
             }
 
-            VStack(spacing: 0) {
-                Text(Format.rpm(rpm))
-                    .font(.system(size: size * 0.30, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                if showsCaption {
-                    Text(L10n.t("об/мин", "rpm"))
-                        .font(.system(size: size * 0.08))
-                        .foregroundStyle(.white.opacity(0.4))
-                        .offset(y: -2)
+            if showsValue {
+                VStack(spacing: 0) {
+                    Text(Format.rpm(rpm))
+                        .font(.system(size: size * 0.30, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.ink)
+                    if showsCaption {
+                        Text(L10n.t("об/мин", "rpm"))
+                            .font(.system(size: size * 0.08))
+                            .foregroundStyle(Palette.ink.opacity(0.4))
+                            .offset(y: -2)
+                    }
                 }
             }
         }
         .frame(width: size, height: size)
+        // An arc, four turning blades and a number say nothing to VoiceOver on their
+        // own, so the dial speaks as one control instead of as its parts.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(controlled
+                            ? L10n.t("Вентилятор под управлением", "Fan under control")
+                            : L10n.t("Вентилятор", "Fan"))
+        .accessibilityValue(L10n.t("\(Format.rpm(rpm)) оборотов в минуту",
+                                   "\(Format.rpm(rpm)) rpm"))
     }
 }

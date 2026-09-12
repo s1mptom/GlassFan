@@ -17,7 +17,8 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 30), GridItem(.flexible())],
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 30, alignment: .topLeading),
+                                GridItem(.flexible(), alignment: .topLeading)],
                       alignment: .leading, spacing: 30) {
                 if let config = configBinding() {
                     safety(config).riseIn(0.02)
@@ -50,7 +51,8 @@ struct SettingsView: View {
             )
             LabelledSlider(
                 title: L10n.t("Интервал опроса", "Sampling interval"),
-                valueText: String(format: "%.2f с", config.wrappedValue.pollInterval),
+                valueText: String(format: L10n.t("%.2f с", "%.2f s"),
+                                  config.wrappedValue.pollInterval),
                 value: config.pollInterval,
                 range: AppConfig.pollRange,
                 step: 0.25
@@ -64,13 +66,35 @@ struct SettingsView: View {
             Text(L10n.t("Настройки появятся, когда демон будет установлен.",
                         "These appear once the daemon is installed."))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(Palette.ink.opacity(0.4))
         }
+    }
+
+    private var isDefaultGlass: Bool {
+        abs(frost - GlassStyle.defaultFrost) < 0.001 && abs(tint - GlassStyle.defaultTint) < 0.001
     }
 
     private var glass: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SectionCaption(text: L10n.t("Стекло", "Glass"))
+            HStack {
+                SectionCaption(text: L10n.t("Стекло", "Glass"))
+                Spacer()
+                // Only offered once the dials have actually been moved: a reset that is
+                // always there invites a press that does nothing.
+                if !isDefaultGlass {
+                    Button(L10n.t("Сбросить", "Reset")) {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            frost = GlassStyle.defaultFrost
+                            tint = GlassStyle.defaultTint
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.calm)
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: isDefaultGlass)
             LabelledSlider(
                 title: L10n.t("Матовость", "Frost"),
                 valueText: "\(Int(frost * 100)) %",
@@ -97,7 +121,7 @@ struct SettingsView: View {
                     Text(L10n.t("Установлено · запускается вместе с системой",
                                 "Installed · starts with the system"))
                         .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.88))
+                        .foregroundStyle(Palette.ink.opacity(0.88))
                 }
                 HStack(spacing: 10) {
                     Button(L10n.t("Переустановить", "Reinstall")) { installer.install() }
@@ -109,7 +133,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text(L10n.t("Выполняю…", "Working…"))
-                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                        .font(.system(size: 12)).foregroundStyle(Palette.ink.opacity(0.6))
                 }
             case .failed(let message):
                 Text(message).font(.system(size: 11.5)).foregroundStyle(Palette.critical)
@@ -119,7 +143,7 @@ struct SettingsView: View {
                 Text(L10n.t("Не установлено. Без этого приложение только показывает температуры.",
                             "Not installed. Without it the app only shows temperatures."))
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
                     .fixedSize(horizontal: false, vertical: true)
                 Button(L10n.t("Установить", "Install")) { installer.install() }
                     .buttonStyle(.glassProminent)
@@ -133,7 +157,7 @@ struct SettingsView: View {
             Text(L10n.t("Переводит все вентиляторы в авто и сбрасывает режимы — управление возвращается системе.",
                         "Puts every fan back on auto and clears the modes; the system takes over."))
                 .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(Palette.ink.opacity(0.4))
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 client.releaseAll()
@@ -153,7 +177,7 @@ struct SettingsView: View {
                             "\(client.snapshot?.fans.count ?? 0) fans"))
             }
             .font(.system(size: 11))
-            .foregroundStyle(.white.opacity(0.28))
+            .foregroundStyle(Palette.ink.opacity(0.28))
             .padding(.top, 6)
         }
     }

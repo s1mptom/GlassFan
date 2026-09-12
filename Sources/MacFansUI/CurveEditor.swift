@@ -13,6 +13,7 @@ struct CurveEditor: View {
 
     private let tempRange: ClosedRange<Double> = 30...100
     @State private var dragging: Int?
+    @State private var hovering = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -32,6 +33,26 @@ struct CurveEditor: View {
                 guard plot.contains(location) else { return }
                 curve.addPoint(point(from: location, in: plot))
                 onCommit()
+            }
+            // Adding and removing points is a double click on nothing in particular -
+            // undiscoverable unless it is said out loud. It is said on hover so it
+            // stays out of the way once you know.
+            .overlay(alignment: .bottomTrailing) {
+                if hovering {
+                    Text(L10n.t("Двойной клик — добавить точку, по точке — убрать",
+                                "Double-click to add a point, or on one to remove it"))
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.ink.opacity(0.45))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .glassSurface(cornerRadius: 8)
+                        .padding(.trailing, 6)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onHover { inside in
+                withAnimation(.easeOut(duration: 0.18)) { hovering = inside }
             }
         }
     }
@@ -59,7 +80,7 @@ struct CurveEditor: View {
 
     private func grid(in plot: CGRect) -> some View {
         Canvas { context, _ in
-            let line = Color.white.opacity(0.05)
+            let line = Palette.ink.opacity(0.05)
             for temperature in stride(from: 40.0, through: 100.0, by: 20.0) {
                 let x = position(CurvePoint(temperature: temperature, rpm: limits.minRPM), in: plot).x
                 context.stroke(Path { $0.move(to: CGPoint(x: x, y: plot.minY))
@@ -103,7 +124,7 @@ struct CurveEditor: View {
     private func handles(in plot: CGRect) -> some View {
         ForEach(Array(curve.points.enumerated()), id: \.offset) { index, point in
             Circle()
-                .fill(Color(red: 0.04, green: 0.06, blue: 0.10))
+                .fill(Palette.surface)
                 .overlay(Circle().strokeBorder(Palette.calm, lineWidth: 2.5))
                 .frame(width: 13, height: 13)
                 .scaleEffect(dragging == index ? 1.25 : 1)
@@ -142,11 +163,12 @@ struct CurveEditor: View {
                 Text(String(format: "%.0f° · %.0f", currentTemp, currentRPM))
                     .font(.system(size: 11))
                     .monospacedDigit()
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
                     .glassSurface(cornerRadius: 999)
-                    .position(x: min(marker.x + 64, plot.maxX - 24), y: max(marker.y - 18, plot.minY + 12))
+                    .position(x: min(marker.x + 52, plot.maxX - 46),
+                              y: min(max(marker.y, plot.minY + 12), plot.maxY - 12))
                     .animation(.easeInOut(duration: 0.8), value: currentTemp)
             }
         }
@@ -157,15 +179,15 @@ struct CurveEditor: View {
             ForEach([40.0, 60.0, 80.0, 100.0], id: \.self) { temperature in
                 Text("\(Int(temperature))°")
                     .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(Palette.ink.opacity(0.3))
                     .position(x: position(CurvePoint(temperature: temperature, rpm: limits.minRPM), in: plot).x,
                               y: plot.maxY + 13)
             }
             ForEach([0.0, 0.5, 1.0], id: \.self) { fraction in
-                Text("\(Int(limits.minRPM + fraction * (limits.maxRPM - limits.minRPM)))")
+                Text(Format.rpm(limits.minRPM + fraction * (limits.maxRPM - limits.minRPM)))
                     .font(.system(size: 10))
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(Palette.ink.opacity(0.3))
                     .position(x: plot.minX - 20, y: plot.maxY - plot.height * fraction)
             }
         }

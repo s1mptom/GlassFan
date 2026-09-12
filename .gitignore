@@ -1,3 +1,11 @@
 .build/
 *.app
 .DS_Store
+
+# Xcode's per-user state, written whenever the package is opened in the IDE.
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+
+# memsearch runtime
+.memsearch/.index.pid

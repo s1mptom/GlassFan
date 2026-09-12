@@ -31,6 +31,17 @@ final class DaemonClient {
 
     var config: AppConfig? { draftConfig ?? snapshot?.config }
 
+    /// A client holding the fixture instead of a socket, so previews and screenshots
+    /// render the same state every time without a daemon running.
+    static func demo(connected: Bool = true) -> DaemonClient {
+        let client = DaemonClient()
+        guard connected else { return client }
+        client.history = DemoFixture.history()
+        client.snapshot = DemoFixture.snapshot()
+        client.isConnected = true
+        return client
+    }
+
     func start() {
         if DemoFixture.isEnabled {
             history = DemoFixture.history()

@@ -73,13 +73,13 @@ struct OverviewView: View {
                     VStack(alignment: .leading, spacing: 9) {
                         Text(L10n.t("Вентилятор \(fan.index + 1)", "Fan \(fan.index + 1)"))
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.92))
+                            .foregroundStyle(Palette.ink.opacity(0.92))
 
                         modeChip(fan)
 
                         Text(subtitle(for: fan))
                             .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.34))
+                            .foregroundStyle(Palette.ink.opacity(0.34))
                     }
                     Spacer(minLength: 0)
                 }
@@ -109,14 +109,14 @@ struct OverviewView: View {
             }
             Text(label)
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(controlled ? Palette.calm : .white.opacity(0.66))
+                .foregroundStyle(controlled ? Palette.calm : Palette.ink.opacity(0.66))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .background(
-            Capsule().fill(controlled ? Palette.calm.opacity(0.16) : .white.opacity(0.07))
+            Capsule().fill(controlled ? Palette.calm.opacity(0.16) : Palette.ink.opacity(0.07))
                 .overlay(Capsule().strokeBorder(
-                    controlled ? Palette.calm.opacity(0.32) : .white.opacity(0.14), lineWidth: 0.5))
+                    controlled ? Palette.calm.opacity(0.32) : Palette.ink.opacity(0.14), lineWidth: 0.5))
         )
     }
 
@@ -136,7 +136,7 @@ struct OverviewView: View {
             ForEach(Array(headlineGroups.enumerated()), id: \.offset) { index, item in
                 if index > 0 {
                     Rectangle()
-                        .fill(.white.opacity(0.1))
+                        .fill(Palette.ink.opacity(0.1))
                         .frame(width: 0.5, height: 30)
                         .padding(.horizontal, 15)
                 }
@@ -147,7 +147,7 @@ struct OverviewView: View {
                         .foregroundStyle(heatColor(item.1))
                     Text(item.0)
                         .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .foregroundStyle(Palette.ink.opacity(0.42))
                         .lineLimit(1)
                 }
             }
@@ -175,7 +175,7 @@ struct OverviewView: View {
     /// number is the one that catches the eye.
     private func heatColor(_ temperature: Double) -> Color {
         switch temperature {
-        case ..<70: return .white.opacity(0.92)
+        case ..<70: return Palette.ink.opacity(0.92)
         case ..<85: return Palette.heat
         default:    return Palette.critical
         }
@@ -223,7 +223,7 @@ struct DataHint: View {
                 ProgressView().controlSize(.small)
                 Text(L10n.t("Собираю данные…", "Collecting data…"))
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
             }
             Spacer()
         }
@@ -240,17 +240,17 @@ struct DaemonMissingNotice: View {
         VStack(spacing: 14) {
             Image(systemName: "fan.badge.automatic")
                 .font(.system(size: 34, weight: .light))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(Palette.ink.opacity(0.55))
 
             Text(L10n.t("Управление вентиляторами не установлено",
                         "Fan control is not installed yet"))
                 .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(Palette.ink)
 
             Text(L10n.t("Крутить вентиляторы может только процесс с правами администратора. Приложение поставит его само — macOS спросит пароль.",
                         "Only a process with administrator rights can drive the fans. The app installs one itself; macOS will ask for your password."))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(Palette.ink.opacity(0.45))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 430)
                 .fixedSize(horizontal: false, vertical: true)
@@ -261,7 +261,7 @@ struct DaemonMissingNotice: View {
                     ProgressView().controlSize(.small)
                     Text(L10n.t("Устанавливаю…", "Installing…"))
                         .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Palette.ink.opacity(0.6))
                 }
                 .frame(height: 32)
 

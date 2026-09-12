@@ -20,8 +20,32 @@ enum GlassStyle {
 
     /// The veil laid over the blur: tone picks its lightness, frost its density.
     static func scrim(frost: Double, tint: Double) -> Color {
-        let level = min(max(0.12 + tint * 0.45, 0), 1)
-        return Color(white: level).opacity(min(max(frost, 0), 1) * 0.88)
+        Color(white: scrimLevel(tint)).opacity(scrimAlpha(frost))
+    }
+
+    /// Asymmetric on purpose. Darkening only has to reach black, which is a short
+    /// trip from the material's own lightness; lightening has to travel all the way
+    /// to white, and a gentler slope stranded the whole upper half of the dial in
+    /// mid-grey - the one backing no ink reads well on.
+    private static func scrimLevel(_ tint: Double) -> Double {
+        let level = tint >= 0 ? 0.12 + tint * 0.84 : 0.12 + tint * 0.45
+        return min(max(level, 0), 1)
+    }
+
+    private static func scrimAlpha(_ frost: Double) -> Double {
+        min(max(frost, 0), 1) * 0.88
+    }
+
+    /// Whether the backing has been dialled light enough that white text would sink
+    /// into it. Both dials matter: a light veil that is barely there still leaves a
+    /// dark window, so lightness is weighed by how much of it is actually laid down.
+    ///
+    /// The material underneath is the dark one, hence the 0.1 floor the veil is mixed
+    /// over. A clear pane therefore counts as dark, which is the right call: with no
+    /// veil the desktop shows through and light ink would depend on the wallpaper.
+    static func isLight(frost: Double, tint: Double) -> Bool {
+        let alpha = scrimAlpha(frost)
+        return scrimLevel(tint) * alpha + 0.1 * (1 - alpha) > 0.5
     }
 }
 
@@ -75,6 +99,7 @@ enum Diagnostics {
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
+        guard !Runtime.isPreview else { return view }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             guard let window = view.window else {
                 Diagnostics.log("[window] no host window found")

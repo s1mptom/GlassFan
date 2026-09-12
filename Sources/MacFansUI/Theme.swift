@@ -49,6 +49,24 @@ enum Palette {
     /// it is lighter than the validated steps and would collide with the aqua series
     /// for red-blind viewers if it ever carried identity.
     static let heat = Color.adaptive(light: "#e0662f", dark: "#ff8a5c")
+
+    /// Every mark the interface lays on the glass - text, hairlines, the translucent
+    /// fills behind chips and rows - is this one colour at some opacity.
+    ///
+    /// It follows the appearance rather than being white, because the Tone dial can
+    /// lighten the window backing until white text on it is unreadable. Driving the
+    /// scheme from the backing (see `GlassStyle.isLight`) flips the ink instead, so the
+    /// whole range of the dial stays legible rather than only the dark half of it.
+    static let ink = Color.adaptive(light: "#10141a", dark: "#ffffff")
+
+    /// The blades of a dial the app is driving. Pale blue on dark glass reads as "lit";
+    /// on light glass the same blue disappears, so it deepens instead.
+    static let blade = Color.adaptive(light: "#1f4f86", dark: "#cfe5ff")
+
+    /// The opposite of `ink`, for the few places that need to read as a hole punched
+    /// through the interface rather than a mark laid on it - the hollow centre of a
+    /// curve handle, for one.
+    static let surface = Color.adaptive(light: "#f4f7fb", dark: "#0a0f1a")
 }
 
 extension View {

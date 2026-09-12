@@ -4,6 +4,13 @@ import PackageDescription
 let package = Package(
     name: "MacFans",
     platforms: [.macOS("26.0")],
+    products: [
+        // Declared as a product so Xcode generates a scheme for it, which is what
+        // lets the interface previews build without dragging the executable in.
+        .library(name: "MacFansUI", targets: ["MacFansUI"]),
+        .executable(name: "MacFans", targets: ["MacFans"]),
+        .executable(name: "fanctld", targets: ["fanctld"]),
+    ],
     targets: [
         // Thin, policy-free access to the SMC. The only target that talks to hardware.
         .target(name: "CSMC", linkerSettings: [.linkedFramework("IOKit")]),
@@ -15,8 +22,13 @@ let package = Package(
         .executableTarget(name: "fanctld", dependencies: ["CSMC", "FanKit"],
                           swiftSettings: [.swiftLanguageMode(.v5)]),
 
-        // Unprivileged SwiftUI app.
-        .executableTarget(name: "MacFans", dependencies: ["FanKit"],
+        // The interface. A library rather than part of the executable, because Xcode
+        // will not render SwiftUI previews inside an executable target.
+        .target(name: "MacFansUI", dependencies: ["FanKit"],
+                swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // Unprivileged SwiftUI app: an entry point and nothing else.
+        .executableTarget(name: "MacFans", dependencies: ["MacFansUI"],
                           swiftSettings: [.swiftLanguageMode(.v5)]),
 
         .testTarget(name: "FanKitTests", dependencies: ["FanKit"]),
