@@ -25,7 +25,10 @@ public struct FanLimits: Codable, Equatable, Sendable {
     /// `minRPM` is what the SMC declares, and it used to be the floor here. It
     /// is advice. Tested on an M1 Max with the daemon stopped: asked for 1000
     /// the fan ran at about 1300, asked for 500 at about 1190, asked for 0 it
-    /// stopped - and the SMC kept every one of those targets as written. So a
+    /// stopped - and the SMC kept every one of those targets as written. Held
+    /// for forty seconds at 1300, 1000 and 600 the fans sat at their own floor
+    /// (about 1230 and 1195 rpm, plus or minus fifteen) with no stops and no
+    /// restarts: below the declared minimum they are slow, not unstable. So a
     /// curve may go to zero, which is what lets a fan rest when the machine is
     /// cool, the way the system's own controller rests it.
     public func clamp(_ rpm: Double) -> Double {

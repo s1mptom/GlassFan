@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import AppKit
+import CryptoKit
 import FanKit
 
 /// Installs and removes the privileged daemon from inside the app.
@@ -14,6 +15,11 @@ final class DaemonInstaller {
     enum Status: Equatable {
         case notInstalled
         case installed
+        /// Installed, but not the build this app carries. The daemon is where the
+        /// fan logic runs, so an app updated without its daemon quietly keeps the
+        /// old rules - a curve that goes to zero, say, with a daemon that still
+        /// floors it at the SMC minimum.
+        case outdated
         case working
         case failed(String)
     }
@@ -25,9 +31,19 @@ final class DaemonInstaller {
 
     func refresh() {
         if case .working = status { return }
-        status = FileManager.default.isExecutableFile(atPath: Self.daemonPath)
-            && FileManager.default.fileExists(atPath: Self.plistPath)
-            ? .installed : .notInstalled
+        guard FileManager.default.isExecutableFile(atPath: Self.daemonPath),
+              FileManager.default.fileExists(atPath: Self.plistPath)
+        else { status = .notInstalled; return }
+        status = Self.installedMatchesBundle() ? .installed : .outdated
+    }
+
+    /// Byte-for-byte: the daemon in the bundle against the one on disk.
+    private static func installedMatchesBundle() -> Bool {
+        guard let bundled = Bundle.main.url(forResource: "fanctld", withExtension: nil),
+              let ours = try? Data(contentsOf: bundled),
+              let theirs = try? Data(contentsOf: URL(fileURLWithPath: daemonPath))
+        else { return true }   // nothing to compare against: do not nag
+        return SHA256.hash(data: ours) == SHA256.hash(data: theirs)
     }
 
     func install() {

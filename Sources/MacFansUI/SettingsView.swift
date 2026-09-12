@@ -129,6 +129,22 @@ struct SettingsView: View {
                     Button(L10n.t("Удалить", "Remove")) { installer.uninstall() }
                         .buttonStyle(.glass)
                 }
+            case .outdated:
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .foregroundStyle(Palette.heat)
+                    Text(L10n.t("Установлен старый демон · в приложении новее",
+                                "An older daemon is installed · this app carries a newer one"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.ink.opacity(0.88))
+                }
+                Text(L10n.t("Логика управления живёт в демоне, так что без обновления новые возможности не действуют.",
+                            "The control logic lives in the daemon, so until it is updated the new behaviour does not apply."))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(L10n.t("Обновить", "Update")) { installer.install() }
+                    .buttonStyle(.glassProminent)
             case .working:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)

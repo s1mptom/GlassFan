@@ -3,6 +3,7 @@ import FanKit
 
 struct FansView: View {
     @Environment(DaemonClient.self) private var client
+    @Environment(DaemonInstaller.self) private var installer
     /// Which fan the detail pane shows. Stored, so the overview can point the
     /// screen at a particular fan before switching to it.
     @AppStorage(FansView.selectedKey) private var selected: Int = 0
@@ -154,6 +155,25 @@ struct FansView: View {
     private func detail(_ fan: FanReading) -> some View {
         let settingsBinding = binding(for: fan)
         return VStack(alignment: .leading, spacing: 16) {
+            if installer.status == .outdated {
+                // Said where it bites: this is the screen whose settings the old
+                // daemon will not honour.
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Palette.heat)
+                    Text(L10n.t("Установлен старый демон — эти настройки применит только новый. Настройки → Обновить.",
+                                "An older daemon is installed; only the new one honours these settings. Settings → Update."))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                    Spacer()
+                    Button(L10n.t("Обновить", "Update")) { installer.install() }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Palette.heat.opacity(0.10)))
+            }
             HStack(spacing: 14) {
                 GlassSegmented(
                     items: [

@@ -13,13 +13,12 @@ struct CurveEditor: View {
 
     private let tempRange: ClosedRange<Double> = 30...100
     @State private var dragging: Int?
-    @State private var hovering = false
 
     var body: some View {
         GeometryReader { geometry in
             let plot = CGRect(x: 34, y: 8,
                               width: max(geometry.size.width - 44, 10),
-                              height: max(geometry.size.height - 34, 10))
+                              height: max(geometry.size.height - 52, 10))
 
             ZStack(alignment: .topLeading) {
                 grid(in: plot)
@@ -34,26 +33,6 @@ struct CurveEditor: View {
                 guard plot.contains(location) else { return }
                 curve.addPoint(point(from: location, in: plot))
                 onCommit()
-            }
-            // Adding and removing points is a double click on nothing in particular -
-            // undiscoverable unless it is said out loud. It is said on hover so it
-            // stays out of the way once you know.
-            .overlay(alignment: .bottomTrailing) {
-                if hovering {
-                    Text(L10n.t("Двойной клик — добавить точку, по точке — убрать",
-                                "Double-click to add a point, or on one to remove it"))
-                        .font(.system(size: 10))
-                        .foregroundStyle(Palette.ink.opacity(0.45))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .glassSurface(cornerRadius: 8)
-                        .padding(.trailing, 6)
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-                }
-            }
-            .onHover { inside in
-                withAnimation(.easeOut(duration: 0.18)) { hovering = inside }
             }
         }
     }
@@ -220,6 +199,17 @@ struct CurveEditor: View {
 
     private func axisLabels(in plot: CGRect) -> some View {
         ZStack(alignment: .topLeading) {
+            // Adding and removing points is a double click on nothing in
+            // particular - undiscoverable unless it is said. It was a hover
+            // tooltip, which was small, floated over the axis labels and looked
+            // like it was trying to squeeze into the interface. A caption under
+            // the plot is always there and in nobody's way.
+            Text(L10n.t("Двойной клик — добавить точку, по точке — убрать",
+                        "Double-click to add a point, or on one to remove it"))
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.ink.opacity(0.35))
+                .fixedSize()
+                .offset(x: plot.minX, y: plot.maxY + 28)
             ForEach([40.0, 60.0, 80.0, 100.0], id: \.self) { temperature in
                 Text("\(Int(temperature))°")
                     .font(.system(size: 10))
