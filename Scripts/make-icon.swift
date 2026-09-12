@@ -100,9 +100,15 @@ func render(size: Int) -> Data? {
     }
 
     // The disc: the air first - the blades swollen wide and blurred, at low
-    // strength - then the five crisp blades over it.
-    let disc = pane.insetBy(dx: pane.width * 0.03, dy: pane.height * 0.03)
-    let turn: CGFloat = 0.32
+    // strength - then the five crisp blades over it. Larger than the pane on
+    // purpose: at Dock size a star that fits inside the glass is a speck, so the
+    // tips run out past the pane to near the tile's edge, clipped to the tile.
+    // One blade points straight up; a five-fold star has no left-right
+    // symmetry, and a vertical axis is what makes it read as balanced.
+    let disc = tile.insetBy(dx: -tile.width * 0.10, dy: -tile.height * 0.10)
+    let turn: CGFloat = .pi
+    cx.saveGState()
+    cx.addPath(shape); cx.clip()
     cx.saveGState()
     cx.setShadow(offset: .zero, blur: side * 0.05, color: NSColor(srgbRed: 0.80, green: 0.90, blue: 1, alpha: 0.9).cgColor)
     cx.addPath(blades(in: disc, count: 5, spread: 2.8, turn: turn))
@@ -110,10 +116,10 @@ func render(size: Int) -> Data? {
     cx.fillPath()
     cx.restoreGState()
 
-    cx.addPath(blades(in: disc, count: 5, spread: 1, turn: turn))
+    cx.addPath(blades(in: disc, count: 5, spread: 1.15, turn: turn))
     cx.setFillColor(NSColor(white: 1, alpha: 0.96).cgColor)
     cx.fillPath()
-    let hub = disc.width * 0.05
+    let hub = disc.width * 0.045
     cx.addEllipse(in: CGRect(x: disc.midX - hub, y: disc.midY - hub, width: hub * 2, height: hub * 2))
     cx.setFillColor(NSColor(white: 1, alpha: 0.96).cgColor)
     cx.fillPath()
