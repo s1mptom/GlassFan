@@ -6,6 +6,14 @@ struct SeriesPoint: Identifiable {
     let date: Date
     let value: Double
     let series: String
+    /// Which unbroken run of readings this point belongs to. A new one starts
+    /// wherever the readings stopped - the Mac slept, the daemon was restarted -
+    /// so the line breaks there instead of drawing a straight edge across time
+    /// nobody measured.
+    var segment: Int = 0
+
+    /// What Swift Charts joins with a line: one series, one unbroken run.
+    var line: String { "\(series)#\(segment)" }
 
     /// Derived, not a fresh `UUID` per point.
     ///
@@ -64,7 +72,9 @@ struct TimeChart: View {
                 ForEach(points.filter { $0.series == firstSeries }) { point in
                     AreaMark(
                         x: .value(L10n.t("Время", "Time"), point.date),
-                        y: .value(unit, point.value)
+                        y: .value(unit, point.value),
+                        series: .value("Line", point.line),
+                        stacking: .unstacked
                     )
                     // Fading to nothing over the full height left a wash dense enough
                     // to sit on top of the cooler series; most of the fall now happens
@@ -84,8 +94,10 @@ struct TimeChart: View {
             ForEach(points) { point in
                 LineMark(
                     x: .value(L10n.t("Время", "Time"), point.date),
-                    y: .value(unit, point.value)
+                    y: .value(unit, point.value),
+                    series: .value("Line", point.line)
                 )
+                // Colour by sensor, lines by run: a sensor's runs share its colour.
                 .foregroundStyle(by: .value(L10n.t("Датчик", "Sensor"), point.series))
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.monotone)

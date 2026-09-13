@@ -102,3 +102,31 @@ struct ChartSeriesTests {
         #expect(Set(points.map(\.id)).count == points.count)
     }
 }
+
+/// After a sleep the line drew a straight edge across the time nothing was
+/// measured. It breaks there now.
+@Suite("Chart breaks")
+struct ChartBreakTests {
+    @Test("readings that stop and resume make two runs of one sensor")
+    func sleepBreaksTheLine() {
+        let before = (0..<5).map { HistorySample(t: Double($0), temps: ["A": 60], fanRPM: []) }
+        let after = (0..<5).map { HistorySample(t: 600 + Double($0), temps: ["A": 50], fanRPM: []) }
+        let points = ChartSampling.points(before + after, keys: ["A"], gap: 15)
+        #expect(Set(points.map(\.segment)) == [0, 1])
+        #expect(Set(points.map(\.series)) == ["A"])
+        #expect(points.filter { $0.segment == 0 }.allSatisfy { $0.value == 60 })
+    }
+
+    @Test("steady readings stay one run")
+    func noBreak() {
+        let samples = (0..<100).map { HistorySample(t: Double($0), temps: ["A": 60, "B": 40], fanRPM: []) }
+        let points = ChartSampling.points(samples, keys: ["A", "B"], gap: 15)
+        #expect(Set(points.map(\.segment)) == [0])
+    }
+
+    @Test("the break gap follows a slow poll, not just the bucket")
+    func gapFollowsPoll() {
+        #expect(ChartSampling.breakGap(window: 300, limit: 180, pollInterval: 1) == 5)
+        #expect(ChartSampling.breakGap(window: 300, limit: 180, pollInterval: 5) == 15)
+    }
+}

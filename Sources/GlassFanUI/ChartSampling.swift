@@ -78,14 +78,30 @@ enum ChartSampling {
     /// one series, and Swift Charts drew a single line hopping between the two
     /// on every sample: a saw of seven to ten degrees that was really the gap
     /// between two cores, each of them steady.
-    static func points(_ samples: [HistorySample], keys: [String]) -> [SeriesPoint] {
-        samples.flatMap { sample -> [SeriesPoint] in
+    static func points(_ samples: [HistorySample], keys: [String],
+                       gap: TimeInterval = .infinity) -> [SeriesPoint] {
+        // Per sensor, not per sample: a sensor charted only from some point on has
+        // a hole of its own even where the others are continuous.
+        var lastTime: [String: Double] = [:]
+        var segment: [String: Int] = [:]
+        return samples.sorted { $0.t < $1.t }.flatMap { sample -> [SeriesPoint] in
             let date = Date(timeIntervalSince1970: sample.t)
             return keys.compactMap { key -> SeriesPoint? in
                 guard let value = sample.temps[key] else { return nil }
-                return SeriesPoint(date: date, value: value, series: key)
+                if let previous = lastTime[key], sample.t - previous > gap {
+                    segment[key, default: 0] += 1
+                }
+                lastTime[key] = sample.t
+                return SeriesPoint(date: date, value: value, series: key, segment: segment[key] ?? 0)
             }
         }
+    }
+
+    /// How long readings can stop before the line breaks: three buckets or three
+    /// polls, whichever is longer, so a slow poll interval on a short window does
+    /// not break the line at every other bucket.
+    static func breakGap(window: TimeInterval, limit: Int, pollInterval: TimeInterval) -> TimeInterval {
+        max(window / Double(max(limit, 1)), pollInterval) * 3
     }
 
     /// A range that holds the data with a little air, snapped outward to whole

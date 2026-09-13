@@ -50,11 +50,16 @@ enum DemoFixture {
     }
 
     /// Fifteen minutes of plausible wander, so the chart has the same shape every run.
-    static func history() -> [HistorySample] {
+    /// `sleptAt`: seconds into the fifteen minutes where the Mac went to sleep for
+    /// three minutes, so a preview can show the line breaking across it.
+    static func history(sleptAt: Int? = nil) -> [HistorySample] {
         let now = Date().timeIntervalSince1970
         let keys = ["TCMz", "Tp0D", "TaRT", "TG0B"]
         let bases: [Double] = [76, 67, 37, 34]
-        return (0..<900).map { step in
+        return (0..<900).filter { step in
+            guard let sleptAt else { return true }
+            return !(sleptAt..<(sleptAt + 180)).contains(step)
+        }.map { step in
             let t = Double(step)
             var temps: [String: Double] = [:]
             for (index, key) in keys.enumerated() {

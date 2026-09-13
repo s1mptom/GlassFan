@@ -47,11 +47,12 @@ final class DaemonClient {
 
     /// A client holding the fixture instead of a socket, so previews and screenshots
     /// render the same state every time without a daemon running.
-    static func demo(connected: Bool = true, alarming: Bool = false, fanless: Bool = false) -> DaemonClient {
+    static func demo(connected: Bool = true, alarming: Bool = false, fanless: Bool = false,
+                     sleptAt: Int? = nil) -> DaemonClient {
         let client = DaemonClient()
         guard connected else { return client }
         client.feed = Feed(snapshot: DemoFixture.snapshot(alarming: alarming, fanless: fanless),
-                           history: DemoFixture.history())
+                           history: DemoFixture.history(sleptAt: sleptAt))
         client.isConnected = true
         return client
     }

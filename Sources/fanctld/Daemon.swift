@@ -14,7 +14,8 @@ final class Daemon {
     private let smc: SMCDevice
     private let hardware: FanHardware
     private let server: SocketServer
-    private let history = History(capacity: 1800) // 30 min at 1 Hz
+    private static let historyCapacity = 1800 // 30 min at 1 Hz
+    private let history = History(capacity: Daemon.historyCapacity)
     private let loopQueue = DispatchQueue(label: "glassfan.control")
     private var timer: DispatchSourceTimer?
     private var watchdog: DispatchSourceTimer?
@@ -24,6 +25,10 @@ final class Daemon {
     private var temperatureKeys: [String] = []
     private var lastSnapshot: Snapshot?
     private var lastTick = Date()
+    /// The same moment on a clock that stops while the Mac sleeps - how the
+    /// watchdog tells a sleep from a hang.
+    private var lastTickAwake = Daemon.awakeSeconds()
+    private var historySaver: DispatchSourceTimer?
     /// Last write failure per fan, so a persistent refusal is logged once per change
     /// rather than on every tick.
     private var lastWriteError: [Int: String?] = [:]
@@ -34,6 +39,7 @@ final class Daemon {
         hardware = FanHardware(smc: smc)
         server = SocketServer(path: Self.socketPath)
         config = Self.loadConfig(fanCount: hardware.fans.count)
+        restoreHistory()
         discoverTemperatureSensors()
         // A charted list none of whose sensors exist here - a fresh install on a
         // chip that names its sensors differently, or a config carried over from
@@ -68,6 +74,7 @@ final class Daemon {
 
         installSignalHandling()
         startWatchdog()
+        startHistorySaver()
 
         let timer = DispatchSource.makeTimerSource(queue: loopQueue)
         timer.schedule(deadline: .now(), repeating: config.pollInterval)
@@ -109,6 +116,7 @@ final class Daemon {
     private func tick() {
         stateLock.lock()
         lastTick = Date()
+        lastTickAwake = Self.awakeSeconds()
         stateLock.unlock()
 
         var temperatures: [String: Double] = [:]
@@ -228,11 +236,25 @@ final class Daemon {
         watchdog.setEventHandler { [weak self] in
             guard let self else { return }
             self.stateLock.lock()
-            let age = Date().timeIntervalSince(self.lastTick)
+            let wallAge = Date().timeIntervalSince(self.lastTick)
+            let awakeAge = Self.awakeSeconds() - self.lastTickAwake
             self.stateLock.unlock()
             let limit = max(10, self.config.pollInterval * 10)
-            if age > limit {
-                Log.error("control loop stalled for \(Int(age))s - releasing fans to the system")
+            switch LoopHealth.classify(wallAge: wallAge, awakeAge: awakeAge, limit: limit) {
+            case .ticking:
+                break
+            case .slept(let seconds):
+                // Not a fault. The fans are still handed back: while the Mac slept
+                // the system had them, and the next tick takes control afresh
+                // rather than trusting ownership from before the sleep.
+                Log.info("woke after \(Int(seconds))s asleep - fans back to the system until the next reading")
+                self.hardware.releaseAll()
+                self.stateLock.lock()
+                self.lastTick = Date()
+                self.lastTickAwake = Self.awakeSeconds()
+                self.stateLock.unlock()
+            case .stalled(let seconds):
+                Log.error("control loop stalled for \(Int(seconds))s - releasing fans to the system")
                 self.hardware.releaseAll()
             }
         }
@@ -247,6 +269,8 @@ final class Daemon {
             source.setEventHandler { [weak self] in
                 Log.info("signal \(sig): releasing fans and exiting")
                 self?.hardware.releaseAll()
+                // An update or a restart arrives here; the chart survives it.
+                self?.saveHistory()
                 self?.server.stop()
                 exit(0)
             }
@@ -257,6 +281,54 @@ final class Daemon {
     }
 
     private var signalSources: [DispatchSourceSignal] = []
+
+    // MARK: History persistence
+
+    static var historyPath: String {
+        ProcessInfo.processInfo.environment["GLASSFAN_HISTORY"]
+            ?? (configPath as NSString).deletingLastPathComponent + "/history.json"
+    }
+
+    /// Seconds on a clock that does not run while the Mac is asleep.
+    static func awakeSeconds() -> TimeInterval {
+        TimeInterval(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1_000_000_000
+    }
+
+    private func restoreHistory() {
+        guard let data = FileManager.default.contents(atPath: Self.historyPath),
+              let saved = try? JSONDecoder().decode([HistorySample].self, from: data)
+        else { return }
+        let kept = HistoryRecord.restorable(saved, now: Date().timeIntervalSince1970,
+                                            capacity: Self.historyCapacity)
+        history.restore(kept)
+        Log.info("history restored: \(kept.count) of \(saved.count) samples still in range")
+    }
+
+    /// On exit, and every five minutes as a net for the exits that give no
+    /// warning - a crash, a power cut. Five, not one: a half hour of history is a
+    /// few hundred kilobytes, and rewriting it every minute is a gigabyte of SSD
+    /// writes a day for a chart. Nothing is written when nothing was recorded, so
+    /// a sleeping Mac writes nothing.
+    private func startHistorySaver() {
+        let saver = DispatchSource.makeTimerSource(queue: loopQueue)
+        saver.schedule(deadline: .now() + 300, repeating: 300)
+        saver.setEventHandler { [weak self] in self?.saveHistory() }
+        saver.resume()
+        historySaver = saver
+    }
+
+    private func saveHistory() {
+        guard let samples = history.unsaved() else { return }
+        let directory = (Self.historyPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(HistoryRecord.compacted(samples)) else { return }
+        do {
+            try data.write(to: URL(fileURLWithPath: Self.historyPath), options: .atomic)
+            history.markSaved()
+        } catch {
+            Log.warn("history not saved: \(error)")
+        }
+    }
 
     // MARK: Config persistence
 

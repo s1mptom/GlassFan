@@ -242,7 +242,10 @@ struct OverviewView: View {
 
     private var chart: some View {
         let names = SensorCatalog.distinctNames(for: trackedKeys)
-        let points = ChartSampling.points(samples, keys: trackedKeys)
+        let points = ChartSampling.points(
+            samples, keys: trackedKeys,
+            gap: ChartSampling.breakGap(window: Double(window.rawValue), limit: Self.sampleLimit,
+                                        pollInterval: client.config?.pollInterval ?? 1))
 
         return VStack(alignment: .leading, spacing: 12) {
             if points.isEmpty {

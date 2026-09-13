@@ -7,6 +7,7 @@ launchctl bootout system/"$LABEL" 2>/dev/null || true
 rm -f "/Library/LaunchDaemons/${LABEL}.plist"
 rm -rf /usr/local/libexec/glassfan
 rm -f /var/run/glassfan.sock
+rm -f "/Library/Application Support/GlassFan/history.json"
 
 # Leftovers of the MacFans-era install, if any.
 launchctl bootout system/com.macfans.fanctld 2>/dev/null || true

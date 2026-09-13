@@ -15,6 +15,7 @@ private struct PreviewShell: View {
          connected: Bool = true,
          alarming: Bool = false,
          fanless: Bool = false,
+         sleptAt: Int? = nil,
          frost: Double = GlassStyle.defaultFrost,
          tint: Double = GlassStyle.defaultTint) {
         // The window restores these, so seeding them is how a preview picks a screen
@@ -22,7 +23,7 @@ private struct PreviewShell: View {
         UserDefaults.standard.set(screen.rawValue, forKey: Screen.storageKey)
         UserDefaults.standard.set(frost, forKey: GlassStyle.frostKey)
         UserDefaults.standard.set(tint, forKey: GlassStyle.tintKey)
-        client = .demo(connected: connected, alarming: alarming, fanless: fanless)
+        client = .demo(connected: connected, alarming: alarming, fanless: fanless, sleptAt: sleptAt)
     }
 
     var body: some View {
@@ -56,6 +57,9 @@ private struct PreviewShell: View {
 
 /// The popover behind the plus in Curve sensors, which has no other way to be seen
 /// short of clicking into it.
+/// Three minutes of sleep in the middle of the window: the lines break across it.
+#Preview("After a sleep") { PreviewShell(.overview, sleptAt: 420) }
+
 /// Every MacBook Air: sensors, and no fans at all.
 #Preview("No fans · overview") { PreviewShell(.overview, fanless: true) }
 #Preview("No fans · fans") { PreviewShell(.fans, fanless: true) }
