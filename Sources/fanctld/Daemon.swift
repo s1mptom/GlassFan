@@ -45,7 +45,14 @@ final class Daemon {
         // chip that names its sensors differently, or a config carried over from
         // another Mac - gets this machine's own. A list with anything real in it is
         // the user's choice and is left alone.
-        if Set(config.trackedSensors).isDisjoint(with: temperatureKeys) {
+        if SensorCatalog.isRetiredDefault(config.trackedSensors) {
+            // Never edited, so nobody chose it - and three of its ten were mislabelled:
+            // a core's probe, a battery-temperature alias billed as the GPU, and
+            // chassis walls read as "palm rest".
+            config.trackedSensors = SensorCatalog.trackedDefaults(available: temperatureKeys)
+            Log.info("charted sensors moved to the current defaults: \(config.trackedSensors.joined(separator: ", "))")
+            saveConfig()
+        } else if Set(config.trackedSensors).isDisjoint(with: temperatureKeys) {
             config.trackedSensors = SensorCatalog.trackedDefaults(available: temperatureKeys)
             Log.info("charted sensors chosen for this hardware: \(config.trackedSensors.joined(separator: ", "))")
             saveConfig()

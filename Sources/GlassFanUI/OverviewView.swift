@@ -206,19 +206,12 @@ struct OverviewView: View {
         .padding(.top, 26)
     }
 
-    /// One walk over the readings, not one per group. `sensors(in:)` scans the
-    /// whole list each time it is called, and calling it five times a second over
-    /// a couple of hundred sensors is work this row does not need.
+    /// One walk over the readings, and each group speaks through its named parts:
+    /// the hottest core, GPU cluster or drive, never a probe alias running warm.
     private var headlineGroups: [(String, Double)] {
-        var hottest: [SensorGroup: Double] = [:]
-        for sensor in client.snapshot?.sensors ?? [] {
-            let group = SensorCatalog.info(for: sensor.key).group
-            hottest[group] = max(hottest[group] ?? -.infinity, sensor.value)
-        }
-        return [SensorGroup.cpu, .gpu, .comfort, .storage, .battery].compactMap { group in
-            guard let value = hottest[group] else { return nil }
-            return (group.shortTitle, value)
-        }
+        SensorCatalog.headlines(client.snapshot?.sensors ?? [],
+                                groups: [.cpu, .gpu, .comfort, .storage, .battery])
+            .map { ($0.0.shortTitle, $0.1) }
     }
 
     private var legendTrailing: String {

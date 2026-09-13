@@ -215,8 +215,4 @@ final class DaemonClient {
     var hottest: SensorReading? {
         snapshot?.sensors.max { $0.value < $1.value }
     }
-
-    func sensors(in group: SensorGroup) -> [SensorReading] {
-        (snapshot?.sensors ?? []).filter { SensorCatalog.info(for: $0.key).group == group }
-    }
 }

@@ -86,6 +86,27 @@ if CommandLine.arguments.contains("--stall-test") {
     exit(0)
 }
 
+/// Every temperature key this Mac reports, as tab-separated key, SMC type,
+/// value, group and current display name - sorted by key, for naming work.
+/// Read-only; needs no privileges.
+if CommandLine.arguments.contains("--dump-sensors") {
+    do {
+        let smc = try SMCDevice()
+        // In list order, essential sensors marked: the table the interface shows.
+        for key in smc.allKeys().filter({ $0.hasPrefix("T") }).sorted(by: SensorCatalog.precedes) {
+            guard let reading = smc.read(key),
+                  SensorCatalog.looksLikeTemperature(key: key, type: reading.type, value: reading.value)
+            else { continue }
+            let info = SensorCatalog.info(for: key)
+            print("\(key)\t\(reading.type)\t\(String(format: "%.1f", reading.value))\t\(info.group.rawValue)\t\(info.essential ? "*" : "")\t\(info.name)")
+        }
+        exit(0)
+    } catch {
+        print("dump failed: \(error)")
+        exit(1)
+    }
+}
+
 if CommandLine.arguments.contains("--probe") {
     do {
         let smc = try SMCDevice()

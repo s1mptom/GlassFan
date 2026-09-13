@@ -17,12 +17,17 @@ private struct PreviewShell: View {
          fanless: Bool = false,
          sleptAt: Int? = nil,
          frost: Double = GlassStyle.defaultFrost,
-         tint: Double = GlassStyle.defaultTint) {
+         tint: Double = GlassStyle.defaultTint,
+         sensorFilter: SensorFilter = .essential,
+         sensorSort: SensorSort = .importance) {
         // The window restores these, so seeding them is how a preview picks a screen
         // and a glass setting - and it exercises the same path the app really takes.
         UserDefaults.standard.set(screen.rawValue, forKey: Screen.storageKey)
         UserDefaults.standard.set(frost, forKey: GlassStyle.frostKey)
         UserDefaults.standard.set(tint, forKey: GlassStyle.tintKey)
+        UserDefaults.standard.set(sensorFilter.rawValue, forKey: SensorsView.filterKey)
+        UserDefaults.standard.set(sensorSort.rawValue, forKey: SensorsView.sortKey)
+        UserDefaults.standard.set(sensorSort.ascendingByDefault, forKey: SensorsView.ascendingKey)
         client = .demo(connected: connected, alarming: alarming, fanless: fanless, sleptAt: sleptAt)
     }
 
@@ -40,6 +45,9 @@ private struct PreviewShell: View {
 
 #Preview("Sensors") { PreviewShell(.sensors) }
 
+/// Everything the SMC reports, hottest first within each group.
+#Preview("Sensors · all by temperature") { PreviewShell(.sensors, sensorFilter: .all, sensorSort: .temperature) }
+
 #Preview("Settings") { PreviewShell(.settings) }
 
 /// The case the Tone dial used to break: a backing light enough that white text
@@ -55,8 +63,6 @@ private struct PreviewShell: View {
 /// that must not look like an ordinary afternoon.
 #Preview("Trouble") { PreviewShell(.overview, alarming: true) }
 
-/// The popover behind the plus in Curve sensors, which has no other way to be seen
-/// short of clicking into it.
 /// Three minutes of sleep in the middle of the window: the lines break across it.
 #Preview("After a sleep") { PreviewShell(.overview, sleptAt: 420) }
 
@@ -64,8 +70,10 @@ private struct PreviewShell: View {
 #Preview("No fans · overview") { PreviewShell(.overview, fanless: true) }
 #Preview("No fans · fans") { PreviewShell(.fans, fanless: true) }
 
+/// The popover behind the plus in Curve sensors, which has no other way to be seen
+/// short of clicking into it.
 #Preview("Sensor picker") {
-    @Previewable @State var selection = ["TCMz", "TaRT"]
+    @Previewable @State var selection = ["TCMz", "Th02"]
     return SensorPicker(selection: $selection)
         .environment(DaemonClient.demo())
         .frame(width: 360, height: 420)

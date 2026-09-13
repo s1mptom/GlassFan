@@ -335,6 +335,8 @@ struct SensorPicker: View {
     @Environment(DaemonClient.self) private var client
     @Binding var selection: [String]
     @State private var search = ""
+    /// Shares the Sensors screen's choice, so "All" there means all here too.
+    @AppStorage(SensorsView.filterKey) private var filter: SensorFilter = .essential
 
     /// One flat list, so a row can travel between sections with an animation.
     ///
@@ -355,31 +357,34 @@ struct SensorPicker: View {
         }
     }
 
+    /// In the catalogue's fixed order, never by reading: a list that reshuffles as
+    /// temperatures move is a list whose next row is not where the pointer is going.
     private var rows: [Row] {
-        func matches(_ sensor: SensorReading) -> Bool {
-            guard !search.isEmpty else { return true }
-            let info = SensorCatalog.info(for: sensor.key)
-            return info.name.localizedCaseInsensitiveContains(search)
-                || sensor.key.localizedCaseInsensitiveContains(search)
-        }
         let chosen = Set(selection)
-        var rows: [Row] = []
+        var picked: [(SensorInfo, SensorReading)] = []
+        var buckets: [SensorGroup: [(SensorInfo, SensorReading)]] = [:]
+        for sensor in client.snapshot?.sensors ?? [] {
+            let info = SensorCatalog.info(for: sensor.key)
+            if !search.isEmpty,
+               !info.name.localizedCaseInsensitiveContains(search),
+               !sensor.key.localizedCaseInsensitiveContains(search) { continue }
+            if chosen.contains(sensor.key) {
+                picked.append((info, sensor))
+            } else if filter == .all || info.essential || !search.isEmpty {
+                // A search looks through everything: typing a key is asking for it.
+                buckets[info.group, default: []].append((info, sensor))
+            }
+        }
 
-        let picked = (client.snapshot?.sensors ?? [])
-            .filter { chosen.contains($0.key) && matches($0) }
-            .sorted { $0.value > $1.value }
+        var rows: [Row] = []
         if !picked.isEmpty {
             rows.append(.caption("chosen", L10n.t("Выбрано", "Chosen")))
-            rows += picked.map(Row.sensor)
+            rows += picked.sorted { SensorCatalog.precedes($0.0, $1.0) }.map { Row.sensor($0.1) }
         }
-
         for group in SensorGroup.allCases {
-            let sensors = client.sensors(in: group)
-                .filter { !chosen.contains($0.key) && matches($0) }
-                .sorted { $0.value > $1.value }
-            guard !sensors.isEmpty else { continue }
+            guard let sensors = buckets[group], !sensors.isEmpty else { continue }
             rows.append(.caption(group.rawValue, group.title))
-            rows += sensors.map(Row.sensor)
+            rows += sensors.sorted { SensorCatalog.precedes($0.0, $1.0) }.map { Row.sensor($0.1) }
         }
         return rows
     }
@@ -409,11 +414,21 @@ struct SensorPicker: View {
             )
 
             HStack {
+                GlassSegmented(
+                    items: [.init(value: SensorFilter.essential, title: SensorFilter.essential.title),
+                            .init(value: SensorFilter.all, title: SensorFilter.all.title)],
+                    selection: Binding(get: { filter == .all ? .all : .essential },
+                                       set: { filter = $0 }).animation(.smooth(duration: 0.3)),
+                    segmentWidth: nil,
+                    fontSize: 11
+                )
+                .fixedSize()
                 Text(selection.isEmpty
-                     ? L10n.t("Ни одного не выбрано", "None chosen")
-                     : L10n.t("Выбрано: \(selection.count)", "\(selection.count) chosen"))
+                     ? L10n.t("ничего не выбрано", "none chosen")
+                     : L10n.t("выбрано: \(selection.count)", "\(selection.count) chosen"))
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.ink.opacity(0.4))
+                    .padding(.leading, 4)
                 Spacer()
                 if !selection.isEmpty {
                     Button(L10n.t("Снять все", "Clear all")) { selection.removeAll() }

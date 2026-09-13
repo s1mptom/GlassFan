@@ -38,10 +38,11 @@ struct ConfigTests {
 struct SensorNameTests {
     @Test("shared names are told apart by key; unique ones are left alone")
     func distinct() {
-        let names = SensorCatalog.distinctNames(for: ["Tp0D", "Tp0E", "TG0B"])
+        // Two keys no table names share the generated name; TB0T has its own.
+        let names = SensorCatalog.distinctNames(for: ["Tzz1", "Tzz2", "TB0T"])
         #expect(names[0] != names[1])
-        #expect(names[0].hasSuffix("Tp0D"))
-        #expect(names[1].hasSuffix("Tp0E"))
+        #expect(names[0].hasSuffix("Tzz1"))
+        #expect(names[1].hasSuffix("Tzz2"))
         #expect(!names[2].contains("·"))
     }
 }
@@ -52,8 +53,8 @@ struct SensorNameTests {
 struct TrackedDefaultsTests {
     @Test("where the M1 Max sensors exist they are kept, in their order")
     func keepsKnown() {
-        let available = ["TG0B", "TCMz", "Tp0D", "Txxx"]
-        #expect(SensorCatalog.trackedDefaults(available: available) == ["TCMz", "Tp0D", "TG0B"])
+        let available = ["TB0T", "TCMz", "Tp0D", "Txxx", "TCMb"]
+        #expect(SensorCatalog.trackedDefaults(available: available) == ["TCMz", "TCMb", "TB0T"])
     }
 
     @Test("where none exist, this machine's own sensors are charted")

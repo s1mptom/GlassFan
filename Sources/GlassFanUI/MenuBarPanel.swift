@@ -21,7 +21,7 @@ struct MenuBarPanel: View {
                     fanRow
                     modeSwitch
                 }
-                hottestSensors
+                sensorSummary
                 Divider().overlay(Palette.ink.opacity(0.09))
             } else {
                 notRunning
@@ -119,11 +119,11 @@ struct MenuBarPanel: View {
         )
     }
 
-    private var hottestSensors: some View {
+    private var sensorSummary: some View {
         VStack(spacing: 8) {
-            ForEach(topSensors) { sensor in
+            ForEach(headlines, id: \.0) { group, value in
                 HStack(spacing: 10) {
-                    Text(SensorCatalog.info(for: sensor.key).name)
+                    Text(group.shortTitle)
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.ink.opacity(0.75))
                         .frame(width: 128, alignment: .leading)
@@ -131,12 +131,12 @@ struct MenuBarPanel: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(Palette.ink.opacity(0.08))
                         Capsule()
-                            .fill(sensor.value > 70 ? Palette.heat : Palette.calm)
-                            .scaleEffect(x: max(min(max((sensor.value - 20) / 80, 0), 1), 0.01),
+                            .fill(value > 70 ? Palette.heat : Palette.calm)
+                            .scaleEffect(x: max(min(max((value - 20) / 80, 0), 1), 0.01),
                                          y: 1, anchor: .leading)
                     }
                     .frame(height: 3)
-                    Text(Format.temperatureFine(sensor.value).replacingOccurrences(of: " °C", with: "°"))
+                    Text(Format.temperatureFine(value).replacingOccurrences(of: " °C", with: "°"))
                         .font(.system(size: 11.5))
                         .monospacedDigit()
                         .frame(width: 46, alignment: .trailing)
@@ -145,8 +145,11 @@ struct MenuBarPanel: View {
         }
     }
 
-    private var topSensors: [SensorReading] {
-        Array((client.snapshot?.sensors ?? []).sorted { $0.value > $1.value }.prefix(3))
+    /// The same three rows every time, in the same places: the hottest three
+    /// sensors of the moment swapped places and names as the machine worked, and
+    /// often all three were cores of one CPU saying the same thing.
+    private var headlines: [(SensorGroup, Double)] {
+        SensorCatalog.headlines(client.snapshot?.sensors ?? [], groups: [.cpu, .gpu, .storage])
     }
 
     private var notRunning: some View {
