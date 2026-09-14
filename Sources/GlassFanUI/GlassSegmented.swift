@@ -7,8 +7,9 @@ import SwiftUI
 /// what is under it - which follows the pointer, stretches with speed, and on
 /// release glides to the nearest segment and settles back into a platter. This is
 /// the lens iOS 26 gives its segmented controls and tab bars; macOS gives it only
-/// to sliders and switches, and not as anything an app can borrow, so it is drawn
-/// here from public parts.
+/// to sliders and switches, and not as anything an app can borrow, so it is built
+/// here: system glass for the body, a Metal shader for the refraction, and the
+/// light on it painted.
 ///
 /// Every segment keeps the same width whatever is selected, and the label weight
 /// never changes with selection - both used to resize the control under the pointer.
@@ -35,7 +36,7 @@ struct GlassSegmented<Value: Hashable>: View {
     /// The lens lives in an observable object rather than in this view's state.
     /// A drag writes to it sixty times a second, and as state here every write
     /// re-evaluated the whole control - labels, measurements and all - when only
-    /// the lens and the hole it cuts need to follow.
+    /// the lens and what it refracts need to follow.
     @State private var lens = LensState()
 
     private let space = "GlassSegmented"
@@ -44,13 +45,15 @@ struct GlassSegmented<Value: Hashable>: View {
     private var measured: Bool { frames.count == items.count }
 
     var body: some View {
-        LensCutout(lens: lens, band: band) { labels }
+        LensRefracted(lens: lens, band: band) { labels }
             .background(alignment: .topLeading) {
-                LensPlatter(lens: lens, band: band, resting: frames[selectedIndex], selectedIndex: selectedIndex)
+                ZStack(alignment: .topLeading) {
+                    LensPlatter(lens: lens, band: band, resting: frames[selectedIndex], selectedIndex: selectedIndex)
+                    LensBodyHost(lens: lens, band: band)
+                }
             }
             .overlay(alignment: .topLeading) {
-                LensOverlay(lens: lens, band: band, titles: items.map(\.title), frames: frames,
-                            fontSize: fontSize, rowSize: rowSize)
+                LensOverlay(lens: lens, band: band, rowSize: rowSize)
             }
             .coordinateSpace(.named(space))
             .contentShape(Rectangle())
@@ -95,7 +98,7 @@ struct GlassSegmented<Value: Hashable>: View {
         }
         // The glide belongs to the value, not to the click that happened to cause
         // it, so Command-1..4 and the menu bar's mode switch slide as well.
-        .animation(.spring(response: 0.34, dampingFraction: 0.8), value: selection)
+        .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selection)
     }
 
     /// The segments' vertical extent, which the lens and platter share.
@@ -130,7 +133,9 @@ struct GlassSegmented<Value: Hashable>: View {
 
                 let x = track(value.location.x)
                 lens.pointer = value.location.x
-                withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
+                // Close behind the pointer, and stopping where it stops: an
+                // overshoot here reads as the drop sliding past the finger.
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.92)) {
                     lens.x = x
                     lens.width = width(at: x)
                 }
@@ -165,7 +170,10 @@ struct GlassSegmented<Value: Hashable>: View {
                 let frame = frames[target]!
                 selection = items[target].value
 
-                withAnimation(.spring(response: 0.36, dampingFraction: 0.76)) {
+                // Lands without a bounce. Released past a segment's middle it has
+                // to travel back to it, and a spring that overshoots makes that
+                // look like it missed twice.
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.95)) {
                     lens.x = frame.midX
                     lens.width = frame.width
                     lens.stretch = 0
@@ -246,15 +254,15 @@ final class LensState {
     }
 }
 
-/// The labels with the lens's hole cut in them. A view of its own so that the
-/// lens moving re-evaluates this and not the labels inside it.
-private struct LensCutout<Content: View>: View {
+/// The labels, refracted where the lens is. A view of its own so that the lens
+/// moving re-evaluates this and not the labels inside it.
+private struct LensRefracted<Content: View>: View {
     let lens: LensState
     let band: CGRect
     @ViewBuilder let content: Content
 
     var body: some View {
-        content.modifier(LensHole(geometry: lens.geometry(band: band), active: lens.engaged))
+        content.modifier(LensRefraction(geometry: lens.geometry(band: band), active: lens.engaged))
     }
 }
 
@@ -274,7 +282,39 @@ private struct LensPlatter: View {
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
                 .opacity(1 - lens.lift)
-                .animation(.spring(response: 0.34, dampingFraction: 0.8), value: selectedIndex)
+                .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedIndex)
+        }
+    }
+}
+
+private struct LensBodyHost: View {
+    let lens: LensState
+    let band: CGRect
+
+    var body: some View {
+        LensBody(geometry: lens.geometry(band: band))
+    }
+}
+
+/// The drop's glass, under the labels: system glass laid over them frosts them,
+/// where a lens has to show them sharp.
+private struct LensBody: View, Animatable {
+    var geometry: LensGeometry
+
+    var animatableData: LensGeometry.AnimatableData {
+        get { geometry.animatableData }
+        set { geometry.animatableData = newValue }
+    }
+
+    var body: some View {
+        if geometry.isVisible {
+            let rect = geometry.rect
+            Color.clear
+                .glassEffect(.clear, in: Capsule())
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .opacity(geometry.lift)
+                .allowsHitTesting(false)
         }
     }
 }
@@ -282,14 +322,10 @@ private struct LensPlatter: View {
 private struct LensOverlay: View {
     let lens: LensState
     let band: CGRect
-    let titles: [String]
-    let frames: [Int: CGRect]
-    let fontSize: CGFloat
     let rowSize: CGSize
 
     var body: some View {
-        Lens(geometry: lens.geometry(band: band), pointer: lens.pointer, titles: titles, frames: frames,
-             fontSize: fontSize, rowSize: rowSize)
+        Lens(geometry: lens.geometry(band: band), pointer: lens.pointer, rowSize: rowSize)
     }
 }
 
@@ -331,12 +367,13 @@ struct LensGeometry: Equatable {
     }
 }
 
-/// Cuts the labels away where the lens is. The lens shows them itself, magnified;
-/// the originals showing through its clear glass would be a double image.
+/// Refracts the labels through the lens, on the GPU.
 ///
-/// Animatable, so the hole moves frame by frame with the lens rather than jumping
-/// to where the lens is going.
-private struct LensHole: ViewModifier, Animatable {
+/// Animatable, so the refraction moves frame by frame with the glass rather than
+/// jumping to where the glass is going. Off whenever the lens is down: a layer
+/// effect renders the view offscreen, and a resting control has no business
+/// paying for that.
+private struct LensRefraction: ViewModifier, Animatable {
     var geometry: LensGeometry
     let active: Bool
 
@@ -346,45 +383,59 @@ private struct LensHole: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        // Only masked while the lens is in play: a mask is an offscreen pass on
-        // every redraw, and a resting control has no business paying for one.
-        if active {
-            content.mask(alignment: .topLeading) {
-                ZStack(alignment: .topLeading) {
-                    Rectangle().padding(-40)
-                    if geometry.isVisible {
-                        let rect = geometry.rect
-                        Capsule()
-                            .frame(width: rect.width, height: rect.height)
-                            .offset(x: rect.minX, y: rect.minY)
-                            .blendMode(.destinationOut)
-                    }
-                }
-                .compositingGroup()
-            }
+        if let library = LensShaders.library {
+            let rect = geometry.rect
+            content.layerEffect(
+                library.glassLens(
+                    .float4(rect.minX, rect.minY, rect.width, rect.height),
+                    .float(geometry.magnification),
+                    .float(1 + 0.8 * geometry.lift),
+                    .float(0.012 * geometry.lift)
+                ),
+                // The furthest the lens reaches for what it shows: its half-width's
+                // worth of magnification, and the fringe on top.
+                maxSampleOffset: CGSize(width: rect.width * 0.3 + 4, height: rect.height * 0.3 + 4),
+                isEnabled: active && geometry.isVisible
+            )
         } else {
             content
         }
     }
 }
 
-/// The lifted drop: shadow, clear glass, the labels seen through it, its glow
-/// and its rim.
+enum LensShaders {
+    /// The compiled lens shader, or nil if the app was put together without it -
+    /// then the lens still lifts and glides, only without magnifying.
+    static let library: ShaderLibrary? = {
+        let name = "GlassFan_GlassFanUI.bundle"
+        let token = Bundle(for: LensState.self)
+        let places = [Bundle.main.resourceURL, Bundle.main.bundleURL, token.resourceURL,
+                      token.bundleURL.deletingLastPathComponent()]
+        for place in places.compactMap({ $0 }) {
+            if let bundle = Bundle(url: place.appendingPathComponent(name)),
+               let url = bundle.url(forResource: "default", withExtension: "metallib") {
+                return ShaderLibrary(url: url)
+            }
+        }
+        // Xcode previews lay the package out their own way; SwiftPM's accessor
+        // knows it. Not used elsewhere, because it traps when the bundle is missing.
+        return Runtime.isPreview ? ShaderLibrary.bundle(.module) : nil
+    }()
+}
+
+/// The lifted drop's light: its shadow, glow and rim, painted over the labels.
 ///
 /// An `Animatable` view, so SwiftUI hands it every in-between geometry of an
-/// animation and the refracted labels are redrawn in step with the glass around
-/// them. Drawn only while lifted; at rest it is nothing.
+/// animation and the painting keeps step with the glass. Drawn only while
+/// lifted; at rest it is nothing.
 ///
-/// Everything but the glass itself is painted in one `Canvas`. As views - a
-/// shadow, masks, a dozen strokes - the lens was rebuilt as a view tree on every
-/// frame of every animation, and that, not the drawing, was what a drag cost.
+/// Painted in one `Canvas` rather than built from views: as a shadow, masks and a
+/// dozen strokes, the lens was rebuilt as a view tree on every frame of every
+/// animation, and that, not the drawing, was what a drag cost.
 private struct Lens: View, Animatable {
     @Environment(\.colorScheme) private var colorScheme
     var geometry: LensGeometry
     let pointer: CGFloat
-    let titles: [String]
-    let frames: [Int: CGRect]
-    let fontSize: CGFloat
     let rowSize: CGSize
 
     var animatableData: LensGeometry.AnimatableData {
@@ -398,32 +449,12 @@ private struct Lens: View, Animatable {
     var body: some View {
         if geometry.isVisible {
             let rect = geometry.rect
-            ZStack(alignment: .topLeading) {
-                Color.clear
-                    .glassEffect(.clear, in: Capsule())
-                    .frame(width: rect.width, height: rect.height)
-                    .offset(x: rect.minX, y: rect.minY)
-                    .opacity(geometry.lift)
-
-                Canvas { context, _ in
-                    context.translateBy(x: margin, y: margin)
-                    paint(in: &context, lens: rect)
-                } symbols: {
-                    // Each label rasterised once, at the lens's full magnification
-                    // so it stays sharp when drawn larger, then only scaled and
-                    // clipped per frame. Drawing the text itself in every strip
-                    // meant typesetting it dozens of times a frame.
-                    ForEach(titles.indices, id: \.self) { index in
-                        Text(titles[index])
-                            .font(.system(size: fontSize * LensGeometry.maxMagnification, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .fixedSize()
-                            .tag(index)
-                    }
-                }
-                .frame(width: rowSize.width + margin * 2, height: rowSize.height + margin * 2)
-                .offset(x: -margin, y: -margin)
+            Canvas { context, _ in
+                context.translateBy(x: margin, y: margin)
+                paint(in: &context, lens: rect)
             }
+            .frame(width: rowSize.width + margin * 2, height: rowSize.height + margin * 2)
+            .offset(x: -margin, y: -margin)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -436,11 +467,6 @@ private struct Lens: View, Animatable {
         let outline = Capsule().path(in: lens)
 
         paintShadow(in: &context, lens: lens, outline: outline, opacity: edges)
-
-        context.drawLayer { layer in
-            layer.clip(to: outline)
-            paintRefracted(in: &layer, lens: lens)
-        }
 
         context.drawLayer { layer in
             layer.opacity = edges
@@ -536,58 +562,6 @@ private struct Lens: View, Animatable {
             broad.stroke(ring(1.2), with: specular, lineWidth: 2.4)
         }
         context.stroke(ring(0.45), with: specular, lineWidth: 0.9)
-    }
-
-    /// Draws the labels as a lens shows them: magnified in the middle, squeezed
-    /// towards the rim so that at the rim they meet the labels outside exactly.
-    /// A plain magnification would push the letters near the edge out of the lens
-    /// and leave a gap in the word.
-    ///
-    /// No shader: SwiftUI takes Metal shaders only from a compiled library, and
-    /// this package builds without the Metal toolchain. The lens is cut into
-    /// vertical strips instead, each a straight piece of the same curve - fine
-    /// enough that the joins do not show.
-    private func paintRefracted(in context: inout GraphicsContext, lens: CGRect) {
-        let shrink = 1 / LensGeometry.maxMagnification
-        let labels: [(GraphicsContext.ResolvedSymbol, CGRect)] = titles.indices.compactMap { index in
-            guard let frame = frames[index], let symbol = context.resolveSymbol(id: index) else { return nil }
-            return (symbol, frame)
-        }
-        func draw(_ context: inout GraphicsContext, from minX: CGFloat, to maxX: CGFloat) {
-            for (symbol, frame) in labels where frame.maxX >= minX - 4 && frame.minX <= maxX + 4 {
-                let size = CGSize(width: symbol.size.width * shrink, height: symbol.size.height * shrink)
-                context.draw(symbol, in: CGRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
-                                                width: size.width, height: size.height))
-            }
-        }
-
-        let m = geometry.magnification
-        guard lens.width > 0, m > 1.001 else {
-            draw(&context, from: -.infinity, to: .infinity)
-            return
-        }
-        // Position across the lens, -1...1, to the position it shows.
-        func source(_ x: CGFloat) -> CGFloat { x / m + (1 - 1 / m) * x * x * x }
-        func slope(_ x: CGFloat) -> CGFloat { 1 / m + 3 * (1 - 1 / m) * x * x }
-
-        let strips = 18
-        let half = lens.width / 2
-        for strip in 0..<strips {
-            let a = -1 + 2 * CGFloat(strip) / CGFloat(strips)
-            let b = -1 + 2 * CGFloat(strip + 1) / CGFloat(strips)
-            let outX = lens.midX + a * half, outWidth = (b - a) * half
-            let srcX = lens.midX + source(a) * half, srcWidth = (source(b) - source(a)) * half
-            let scaleX = outWidth / srcWidth
-            let scaleY = min(1 / slope((a + b) / 2), m)
-            context.drawLayer { layer in
-                layer.clip(to: Path(CGRect(x: outX - 0.25, y: lens.minY,
-                                           width: outWidth + 0.5, height: lens.height)))
-                layer.translateBy(x: outX, y: lens.midY)
-                layer.scaleBy(x: scaleX, y: scaleY)
-                layer.translateBy(x: -srcX, y: -lens.midY)
-                draw(&layer, from: srcX, to: srcX + srcWidth)
-            }
-        }
     }
 }
 

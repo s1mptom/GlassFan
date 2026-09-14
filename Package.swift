@@ -25,6 +25,9 @@ let package = Package(
         // The interface. A library rather than part of the executable, because Xcode
         // will not render SwiftUI previews inside an executable target.
         .target(name: "GlassFanUI", dependencies: ["FanKit"],
+                // The glass lens shader. Needs the Metal toolchain to build
+                // (xcodebuild -downloadComponent MetalToolchain).
+                resources: [.process("Shaders")],
                 swiftSettings: [.swiftLanguageMode(.v5)]),
 
         // Unprivileged SwiftUI app: an entry point and nothing else.

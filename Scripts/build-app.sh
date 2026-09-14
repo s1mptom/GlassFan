@@ -32,6 +32,8 @@ cp "$ROOT/Scripts/install-daemon.sh"                 "$APP/Contents/Resources/"
 cp "$ROOT/Scripts/uninstall-daemon.sh"               "$APP/Contents/Resources/"
 cp "$ROOT/Scripts/com.glassfan.fanctld.plist"         "$APP/Contents/Resources/"
 cp "$ROOT/build/AppIcon.icns"                        "$APP/Contents/Resources/"
+# The interface's resources: the compiled glass lens shader.
+cp -R "$ROOT/.build/$CONFIG/GlassFan_GlassFanUI.bundle" "$APP/Contents/Resources/"
 chmod 755 "$APP/Contents/Resources/fanctld" "$APP/Contents/Resources/"*.sh
 
 cat > "$APP/Contents/Info.plist" <<PLIST
