@@ -43,26 +43,30 @@ struct GlassSegmented<Value: Hashable>: View {
     private var measured: Bool { frames.count == items.count }
 
     var body: some View {
-        LensRefracted(lens: lens, band: band) { labels }
-            .background(alignment: .topLeading) {
-                LensBackground(lens: lens, band: band, resting: frames[selectedIndex], selectedIndex: selectedIndex)
-            }
-            .overlay(alignment: .topLeading) {
-                LensOverlay(lens: lens, band: band, rowSize: rowSize)
-            }
-            .coordinateSpace(.named(space))
-            .contentShape(Rectangle())
-            .gesture(press)
-            .padding(3)
-            .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Palette.ink.opacity(0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(Palette.ink.opacity(0.10), lineWidth: 0.5)
-                    )
-            )
-            .accessibilityElement(children: .contain)
+        // The track's outline goes through the lens with the labels, so the drop
+        // bends it where the two cross; its fill stays under the platter.
+        LensRefracted(lens: lens, band: band) {
+            labels
+                .padding(3)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(Palette.ink.opacity(0.10), lineWidth: 0.5)
+                )
+        }
+        .background(alignment: .topLeading) {
+            LensBackground(lens: lens, band: band, resting: frames[selectedIndex], selectedIndex: selectedIndex)
+        }
+        .overlay(alignment: .topLeading) {
+            LensOverlay(lens: lens, band: band, rowSize: rowSize)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Palette.ink.opacity(0.06))
+        )
+        .coordinateSpace(.named(space))
+        .contentShape(Rectangle())
+        .gesture(press)
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: Parts
@@ -316,7 +320,7 @@ final class LensState {
     func geometry(at date: Date, band: CGRect) -> LensGeometry {
         advance(to: date.timeIntervalSinceReferenceDate)
         return LensGeometry(centreX: x.value, width: width.value, lift: max(lift.value, 0),
-                            stretch: stretch.value, band: band)
+                            stretch: stretch.value, motion: min(max(x.velocity / 1200, -1), 1), band: band)
     }
 
     /// Brings the springs up to `time`, once a frame.
@@ -440,6 +444,9 @@ struct LensGeometry: Equatable {
     var width: CGFloat
     var lift: CGFloat
     var stretch: CGFloat
+    /// Horizontal speed, -1...1: the light on the glass swings with it and its
+    /// colours part further.
+    var motion: CGFloat = 0
     /// The segments' vertical extent: the platter's top and height.
     var band: CGRect
 
@@ -458,39 +465,42 @@ struct LensGeometry: Equatable {
     static let maxMagnification: CGFloat = 1.3
     var magnification: CGFloat { 1 + (Self.maxMagnification - 1) * lift }
 
-    /// How far the colours part at the glass's curved edges: clearly, while the
-    /// drop is up, and more as it moves - drawn out by its speed, as the stretch
-    /// is. Gone again as it settles into a platter.
-    var fringe: CGFloat { min(lift, 1) * (0.02 + max(stretch, 0) * 0.15) }
     var isVisible: Bool { lift > 0.002 }
 }
 
-/// Refracts the labels through the lens, on the GPU. Off whenever the lens is
-/// down: a layer effect renders the view offscreen, and a resting control has no
-/// business paying for that.
+/// Refracts the labels and the track's outline through the drop, and lights it,
+/// on the GPU. Off whenever the drop is down: a layer effect renders the view
+/// offscreen, and a resting control has no business paying for that.
 private struct LensRefraction: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     let geometry: LensGeometry?
 
+    /// Room around the content for the parts of the drop that reach past it: it
+    /// stands taller than the track, and draws out wider when it moves.
+    private let room: CGFloat = 16
+
     func body(content: Content) -> some View {
         if let library = LensShaders.library {
             let geometry = geometry ?? LensGeometry(centreX: 0, width: 0, lift: 0, stretch: 0, band: .zero)
-            let rect = geometry.rect
-            content.layerEffect(
-                library.glassLens(
-                    .float4(rect.minX, rect.minY, rect.width, rect.height),
-                    .float(geometry.magnification),
-                    .float(1 + 0.8 * min(geometry.lift, 1)),
-                    .float(geometry.fringe),
-                    // The ink follows the scheme: dark labels in light mode.
-                    .float(colorScheme == .light ? 1 : 0)
-                ),
-                // The furthest the lens reaches for what it shows: its half-width's
-                // worth of magnification, and the fringe on top.
-                maxSampleOffset: CGSize(width: rect.width * (0.3 + geometry.fringe) + 4,
-                                        height: rect.height * (0.3 + geometry.fringe) + 4),
-                isEnabled: geometry.isVisible
-            )
+            let rect = geometry.rect.offsetBy(dx: room, dy: room)
+            content
+                .padding(room)
+                .layerEffect(
+                    library.glassLens(
+                        .float4(rect.minX, rect.minY, rect.width, rect.height),
+                        .float(geometry.magnification),
+                        .float(min(geometry.lift, 1)),
+                        .float(geometry.motion),
+                        // The ink follows the scheme: dark labels in light mode.
+                        .float(colorScheme == .light ? 1 : 0)
+                    ),
+                    // How far the drop reaches for what it shows: the magnified
+                    // body, the bend of the rim, and the reflection beside it.
+                    maxSampleOffset: CGSize(width: rect.width * 0.3 + rect.height + 8,
+                                            height: rect.height + 8),
+                    isEnabled: geometry.isVisible
+                )
+                .padding(-room)
         } else {
             content
         }
@@ -517,7 +527,9 @@ enum LensShaders {
     }()
 }
 
-/// The lifted drop's light: its shadow, glow and rim, painted over the labels.
+/// The light on the drop and what it casts: the glare, edge and shading worked out
+/// from its shape by a shader, its shadow on the track, and the bloom under the
+/// pointer.
 ///
 /// Painted in one `Canvas` rather than built from views: as a shadow, masks and a
 /// dozen strokes, the lens was rebuilt as a view tree on every frame, and that,
@@ -534,9 +546,22 @@ private struct Lens: View {
     var body: some View {
         if geometry.isVisible {
             let rect = geometry.rect
-            Canvas { context, _ in
-                context.translateBy(x: margin, y: margin)
-                paint(in: &context, lens: rect)
+            ZStack(alignment: .topLeading) {
+                Canvas { context, _ in
+                    context.translateBy(x: margin, y: margin)
+                    paint(in: &context, lens: rect)
+                }
+                if let library = LensShaders.library {
+                    let lens = rect.offsetBy(dx: margin, dy: margin)
+                    Rectangle()
+                        .fill(.white)
+                        .colorEffect(library.glassLight(
+                            .float4(lens.minX, lens.minY, lens.width, lens.height),
+                            .float(min(geometry.lift, 1)),
+                            .float(geometry.motion),
+                            .float(colorScheme == .light ? 1 : 0)
+                        ))
+                }
             }
             .frame(width: rowSize.width + margin * 2, height: rowSize.height + margin * 2)
             .offset(x: -margin, y: -margin)
@@ -546,22 +571,14 @@ private struct Lens: View {
     }
 
     private func paint(in context: inout GraphicsContext, lens: CGRect) {
-        // Edges fade faster than the glass shrinks, so the landing lens and the
-        // platter it becomes never show as two outlines.
-        let edges = geometry.lift * geometry.lift
         let outline = Capsule().path(in: lens)
-
+        // Faster than the glass shrinks, so a landing drop never shows two edges.
+        let edges = geometry.lift * geometry.lift
         paintShadow(in: &context, lens: lens, outline: outline, opacity: edges)
-
         context.drawLayer { layer in
             layer.opacity = edges
             layer.clip(to: outline)
-            paintGlow(in: &layer, lens: lens)
-        }
-
-        context.drawLayer { layer in
-            layer.opacity = edges
-            paintRim(in: &layer, lens: lens)
+            paintBloom(in: &layer, lens: lens)
         }
     }
 
@@ -587,69 +604,18 @@ private struct Lens: View {
         }
     }
 
-    /// The inside of the drop lit up: its inner edge glows the way thick glass
-    /// gathers light at its rim, and a soft bloom sits under the pointer - the
-    /// response system glass gives to a touch.
-    private func paintGlow(in context: inout GraphicsContext, lens: CGRect) {
-        // Added light on a dark ground; on a light one, adding light only turns the
-        // glass milky, so there it is a much fainter wash.
+    /// A soft bloom under the pointer - the response system glass gives to a touch.
+    /// The rest of the drop's light is the shader's, worked out from its shape.
+    private func paintBloom(in context: inout GraphicsContext, lens: CGRect) {
         let dark = colorScheme == .dark
         context.blendMode = dark ? .plusLighter : .normal
-
-        for step in 0..<3 {
-            let inset = 0.75 + CGFloat(step) * 1.5
-            context.stroke(Capsule().path(in: lens.insetBy(dx: inset, dy: inset)),
-                           with: .color(.white.opacity((dark ? 0.10 : 0.26) * (1 - CGFloat(step) * 0.33))),
-                           lineWidth: 1.5)
-        }
-
         let radius = lens.height * 0.8
         let bloomX = min(max(pointer, lens.minX + lens.height * 0.3), lens.maxX - lens.height * 0.3)
         context.fill(Path(ellipseIn: CGRect(x: bloomX - radius, y: lens.midY - radius,
                                             width: radius * 2, height: radius * 2)),
-                     with: .radialGradient(Gradient(colors: [.white.opacity(dark ? 0.09 : 0.18), .white.opacity(0)]),
+                     with: .radialGradient(Gradient(colors: [.white.opacity(dark ? 0.08 : 0.16), .white.opacity(0)]),
                                            center: CGPoint(x: bloomX, y: lens.midY),
                                            startRadius: 0, endRadius: radius))
-    }
-
-    /// The rim: a hairline where the glass meets the track, specular highlights
-    /// where light from above-left catches the top-left and bottom-right curves,
-    /// and a trace of colour fringing where the edge splits the light.
-    private func paintRim(in context: inout GraphicsContext, lens: CGRect) {
-        func ring(_ inset: CGFloat, dx: CGFloat = 0, dy: CGFloat = 0) -> Path {
-            Capsule().path(in: lens.insetBy(dx: inset, dy: inset).offsetBy(dx: dx, dy: dy))
-        }
-
-        // Colour fringe, just outside the rim, parting further and showing more as
-        // the glass inside it does.
-        let part = geometry.fringe / 0.02
-        let tint = min(0.18 + 0.08 * part, 0.42)
-        context.stroke(ring(-1.7, dx: -0.4 * part, dy: -0.3 * part),
-                       with: .color(Color(red: 1, green: 0.35, blue: 0.55).opacity(tint)), lineWidth: 1)
-        context.stroke(ring(-1.7, dx: 0.4 * part, dy: 0.3 * part),
-                       with: .color(Color(red: 0.3, green: 0.75, blue: 1).opacity(tint)), lineWidth: 1)
-
-        context.stroke(ring(-0.25), with: .color(.black.opacity(0.32)), lineWidth: 0.5)
-
-        let specular = GraphicsContext.Shading.conicGradient(Gradient(stops: [
-            .init(color: .white.opacity(0.15), location: 0.00),   // right
-            .init(color: .white.opacity(0.55), location: 0.10),   // lower right
-            .init(color: .white.opacity(0.10), location: 0.25),   // bottom
-            .init(color: .white.opacity(0.05), location: 0.40),
-            .init(color: .white.opacity(0.35), location: 0.50),   // left
-            .init(color: .white.opacity(0.95), location: 0.62),   // upper left
-            .init(color: .white.opacity(0.70), location: 0.75),   // top
-            .init(color: .white.opacity(0.15), location: 0.90),
-            .init(color: .white.opacity(0.15), location: 1.00),
-        ]), center: CGPoint(x: lens.midX, y: lens.midY))
-
-        // The highlight twice: once broad and faint, as the glow off the curve,
-        // once sharp, as the curve itself.
-        context.drawLayer { broad in
-            broad.opacity = 0.35
-            broad.stroke(ring(1.2), with: specular, lineWidth: 2.4)
-        }
-        context.stroke(ring(0.45), with: specular, lineWidth: 0.9)
     }
 }
 
