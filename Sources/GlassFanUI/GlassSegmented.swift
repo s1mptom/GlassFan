@@ -33,10 +33,8 @@ struct GlassSegmented<Value: Hashable>: View {
     /// Segment frames in the row's own space, measured by the labels themselves.
     @State private var frames: [Int: CGRect] = [:]
 
-    /// The lens lives in an observable object rather than in this view's state.
-    /// A drag writes to it sixty times a second, and as state here every write
-    /// re-evaluated the whole control - labels, measurements and all - when only
-    /// the lens and what it refracts need to follow.
+    /// The drop: its springs, and whether it is in play. An object rather than
+    /// this view's state, so moving it re-draws the lens and not the control.
     @State private var lens = LensState()
 
     private let space = "GlassSegmented"
@@ -47,10 +45,7 @@ struct GlassSegmented<Value: Hashable>: View {
     var body: some View {
         LensRefracted(lens: lens, band: band) { labels }
             .background(alignment: .topLeading) {
-                ZStack(alignment: .topLeading) {
-                    LensPlatter(lens: lens, band: band, resting: frames[selectedIndex], selectedIndex: selectedIndex)
-                    LensBodyHost(lens: lens, band: band)
-                }
+                LensBackground(lens: lens, band: band, resting: frames[selectedIndex], selectedIndex: selectedIndex)
             }
             .overlay(alignment: .topLeading) {
                 LensOverlay(lens: lens, band: band, rowSize: rowSize)
@@ -58,8 +53,6 @@ struct GlassSegmented<Value: Hashable>: View {
             .coordinateSpace(.named(space))
             .contentShape(Rectangle())
             .gesture(press)
-            .onChange(of: frames[selectedIndex]) { _, frame in park(on: frame) }
-            .onChange(of: selection) { park(on: frames[selectedIndex]) }
             .padding(3)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -111,6 +104,13 @@ struct GlassSegmented<Value: Hashable>: View {
 
     // MARK: Interaction
 
+    /// A press lifts the drop. A click glides it to the clicked segment in one
+    /// unbroken move; a drag has it follow the pointer. The choice is made when the
+    /// drop arrives, and only then does it settle.
+    ///
+    /// Choosing waits for arrival because choosing is expensive - picking a screen
+    /// builds it, and nothing moves while it builds. Chosen on release, mid-flight,
+    /// that stalled the drop a tenth of a second short of its target.
     private var press: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
             .onChanged { value in
@@ -118,86 +118,89 @@ struct GlassSegmented<Value: Hashable>: View {
                 let lens = self.lens
                 if !lens.pressing {
                     lens.pressing = true
-                    lens.pressedAt = Date()
-                    if !lens.engaged {
-                        // Starts from the platter it lifts out of, wherever the
-                        // lens was left last time.
-                        park(on: frames[selectedIndex])
-                        lens.engaged = true
+                    lens.dragging = false
+                    lens.token += 1
+                    lens.onArrival = nil
+                    lens.onSettled = nil
+                    if !lens.engaged, let frame = frames[selectedIndex] {
+                        lens.engage(at: frame)
                     }
-                    withAnimation(reduceMotion ? .easeOut(duration: 0.15)
-                                               : .spring(response: 0.3, dampingFraction: 0.6)) {
-                        lens.lift = 1
-                    }
+                    lens.stretches = !reduceMotion
+                    lens.lift.tune(response: reduceMotion ? 0.2 : 0.3, dampingFraction: reduceMotion ? 1 : 0.7)
+                    lens.lift.target = 1
+                    let pressed = nearest(to: value.location.x)
+                    lens.target = pressed
+                    glide(to: pressed)
                 }
 
+                // Not a drag until the pointer has really moved; until then the
+                // glide the press started runs undisturbed.
+                if !lens.dragging {
+                    guard abs(value.translation.width) > 4 else { return }
+                    lens.dragging = true
+                    // Close behind the pointer, and stopping where it stops: an
+                    // overshoot here reads as the drop sliding past the finger.
+                    lens.x.tune(response: 0.2, dampingFraction: 0.9)
+                    lens.width.tune(response: 0.2, dampingFraction: 0.9)
+                }
                 let x = track(value.location.x)
                 lens.pointer = value.location.x
-                // Close behind the pointer, and stopping where it stops: an
-                // overshoot here reads as the drop sliding past the finger.
-                withAnimation(.spring(response: 0.22, dampingFraction: 0.92)) {
-                    lens.x = x
-                    lens.width = width(at: x)
-                }
-
-                guard !reduceMotion else { return }
-                // Stretches along the way it is going, in proportion to speed, and
-                // springs back once the pointer stops.
-                let stretch = min(abs(value.velocity.width) / 4000, 0.14)
-                if abs(stretch - lens.stretch) > 0.004 {
-                    withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) { lens.stretch = stretch }
-                }
-                lens.lastMove = Date()
-                if lens.relax == nil {
-                    // One watcher per gesture, not a task per mouse event.
-                    lens.relax = Task { @MainActor in
-                        while !Task.isCancelled {
-                            try? await Task.sleep(for: .milliseconds(40))
-                            if lens.stretch > 0, Date().timeIntervalSince(lens.lastMove) > 0.06 {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.45)) { lens.stretch = 0 }
-                            }
-                        }
-                    }
-                }
+                lens.x.target = x
+                lens.width.target = width(at: x)
             }
             .onEnded { value in
                 let lens = self.lens
-                lens.relax?.cancel()
-                lens.relax = nil
                 lens.pressing = false
                 guard measured else { return }
-                let target = nearest(to: value.location.x)
-                let frame = frames[target]!
-                selection = items[target].value
-
-                // Lands without a bounce. Released past a segment's middle it has
-                // to travel back to it, and a spring that overshoots makes that
-                // look like it missed twice.
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.95)) {
-                    lens.x = frame.midX
-                    lens.width = frame.width
-                    lens.stretch = 0
+                if lens.dragging {
+                    let target = nearest(to: value.location.x)
+                    let frame = frames[target]!
+                    lens.target = target
+                    // Lands without a bounce: released past a segment's middle it
+                    // has to travel back to it, and an overshoot on top of that
+                    // looks like it missed twice.
+                    lens.x.tune(response: 0.26, dampingFraction: 1)
+                    lens.width.tune(response: 0.26, dampingFraction: 1)
+                    lens.x.target = frame.midX
+                    lens.width.target = frame.width
                 }
-                // A quick click still shows the drop lift and land; a long hold
-                // settles as soon as it arrives.
-                let brief = Date().timeIntervalSince(lens.pressedAt) < 0.18
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.82).delay(brief ? 0.16 : 0.06)) {
-                    lens.lift = 0
-                } completion: {
-                    if !lens.pressing { lens.engaged = false }
+                // A click's glide may still be under way; either way the drop
+                // lands when it gets there.
+                let token = lens.token
+                let target = lens.target
+                lens.onArrival = { land(on: target, token: token) }
+                // Springs only step while the lens is drawn. Should it stop being
+                // drawn - the panel it sits in closing - the choice still counts.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    guard lens.token == token, let arrival = lens.onArrival else { return }
+                    lens.onArrival = nil
+                    arrival()
                 }
             }
     }
 
-    /// Puts the resting lens on a segment without animating, so the next press
-    /// lifts it from the right place.
-    private func park(on frame: CGRect?) {
-        guard !lens.engaged, let frame else { return }
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            lens.x = frame.midX
-            lens.width = frame.width
+    /// One continuous move to a clicked segment, easing out of where the drop is
+    /// and easing into where it is going, a little longer for a longer way.
+    private func glide(to index: Int) {
+        let frame = frames[index]!
+        let distance = abs(frame.midX - lens.x.value)
+        let response = reduceMotion ? 0.2 : min(0.22 + distance / 2400, 0.34)
+        lens.x.tune(response: response, dampingFraction: 1)
+        lens.width.tune(response: response, dampingFraction: 1)
+        lens.x.target = frame.midX
+        lens.width.target = frame.width
+        lens.pointer = frame.midX
+    }
+
+    /// Makes the choice, then lets the drop settle back into a platter.
+    private func land(on index: Int, token: Int) {
+        let lens = self.lens
+        guard lens.token == token, !lens.pressing else { return }
+        if items[index].value != selection { selection = items[index].value }
+        lens.lift.tune(response: 0.36, dampingFraction: 0.9)
+        lens.lift.target = 0
+        lens.onSettled = {
+            if lens.token == token, !lens.pressing { lens.engaged = false }
         }
     }
 
@@ -231,91 +234,189 @@ struct GlassSegmented<Value: Hashable>: View {
 
 // MARK: - Lens
 
+/// A damped spring for one number, stepped by hand.
+///
+/// The lens's position, width, lift and stretch each have one. They were SwiftUI
+/// animations first, and SwiftUI animates a view's animatable values together,
+/// under whichever animation last touched any of them: the glide took on the
+/// stretch's bounce and overshot, and every new animation restarted the others.
+struct LensSpring {
+    var value: CGFloat = 0
+    var velocity: CGFloat = 0
+    var target: CGFloat = 0
+    private var stiffness: CGFloat = 400
+    private var damping: CGFloat = 40
+
+    /// In SwiftUI's own terms: `response` is the period of the undamped motion, and
+    /// a `dampingFraction` of 1 arrives without overshooting.
+    mutating func tune(response: CGFloat, dampingFraction: CGFloat) {
+        let omega = 2 * .pi / max(response, 0.01)
+        stiffness = omega * omega
+        damping = 2 * dampingFraction * omega
+    }
+
+    mutating func jump(to newValue: CGFloat) {
+        value = newValue
+        target = newValue
+        velocity = 0
+    }
+
+    mutating func step(_ dt: CGFloat) {
+        velocity += (-stiffness * (value - target) - damping * velocity) * dt
+        value += velocity * dt
+    }
+
+    func isResting(within tolerance: CGFloat) -> Bool {
+        abs(value - target) < tolerance && abs(velocity) < tolerance * 20
+    }
+}
+
 @Observable
 final class LensState {
-    var x: CGFloat = 0
-    var width: CGFloat = 0
-    var lift: CGFloat = 0
-    var stretch: CGFloat = 0
-    /// From the press until the lens has settled. While engaged the platter rides
-    /// with the lens instead of sitting under the selection.
+    /// From the press until the drop has settled. Only then is the lens drawn and
+    /// its springs stepped; the rest of the time it does not exist.
     var engaged = false
+
+    @ObservationIgnored var x = LensSpring()
+    @ObservationIgnored var width = LensSpring()
+    @ObservationIgnored var lift = LensSpring()
+    @ObservationIgnored var stretch = LensSpring()
     /// Where the pointer is along the row. The glow inside the lens sits here, so
     /// it leads the lens as the lens catches up with the pointer.
-    var pointer: CGFloat = 0
+    @ObservationIgnored var pointer: CGFloat = 0
+    @ObservationIgnored var stretches = true
 
     @ObservationIgnored var pressing = false
-    @ObservationIgnored var pressedAt = Date.distantPast
-    @ObservationIgnored var lastMove = Date.distantPast
-    @ObservationIgnored var relax: Task<Void, Never>?
+    @ObservationIgnored var dragging = false
+    /// The segment the drop is headed for.
+    @ObservationIgnored var target = 0
+    /// Bumped by every press, so that a landing or settling left over from an
+    /// earlier one leaves the current one alone.
+    @ObservationIgnored var token = 0
+    @ObservationIgnored var onArrival: (() -> Void)?
+    @ObservationIgnored var onSettled: (() -> Void)?
+    @ObservationIgnored private var steppedTo: TimeInterval = 0
+    @ObservationIgnored private var askedAt: TimeInterval = 0
 
-    func geometry(band: CGRect) -> LensGeometry {
-        LensGeometry(centreX: x, width: width, lift: lift, stretch: stretch, band: band)
+    init() {
+        stretch.tune(response: 0.26, dampingFraction: 0.5)
+    }
+
+    /// Lifts off from a platter sitting on `frame`.
+    func engage(at frame: CGRect) {
+        x.jump(to: frame.midX)
+        width.jump(to: frame.width)
+        lift.jump(to: 0)
+        stretch.jump(to: 0)
+        pointer = frame.midX
+        steppedTo = 0
+        engaged = true
+    }
+
+    func geometry(at date: Date, band: CGRect) -> LensGeometry {
+        advance(to: date.timeIntervalSinceReferenceDate)
+        return LensGeometry(centreX: x.value, width: width.value, lift: max(lift.value, 0),
+                            stretch: stretch.value, band: band)
+    }
+
+    /// Brings the springs up to `time`, once a frame.
+    ///
+    /// The lens is three views - the glass under the labels, the refraction, the
+    /// light over them - and each asks for the frame it is drawing. Their timelines
+    /// hand them times up to 3 ms apart within one frame; stepped to each, the three
+    /// parts of the drop were drawn a point or two apart, by a different amount
+    /// every frame, and a fast drop shimmered. The first to ask in a frame steps the
+    /// springs; the others, arriving within a few milliseconds, get the same drop.
+    private func advance(to time: TimeInterval) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - askedAt > 0.004 else { return }
+        askedAt = now
+        guard time > steppedTo else { return }
+        // After a stall - a screen being built - the drop carries on from where it
+        // was, rather than leaping to where it would have got to.
+        let elapsed = steppedTo == 0 ? 0 : min(time - steppedTo, 1.0 / 30)
+        steppedTo = time
+        guard elapsed > 0 else { return }
+
+        let steps = Int((elapsed * 480).rounded(.up))
+        let dt = CGFloat(elapsed) / CGFloat(steps)
+        for _ in 0..<steps {
+            x.step(dt)
+            width.step(dt)
+            lift.step(dt)
+            // Drawn out along the way it moves, in proportion to its speed.
+            stretch.target = stretches ? min(abs(x.velocity) / 2600, 0.14) : 0
+            stretch.step(dt)
+        }
+
+        // Handed to the next turn of the run loop: they change state, and this
+        // runs while the lens's views are being drawn.
+        // Arrived once within a point and a half: the rest of a spring's approach
+        // is too small to see and too long to wait for.
+        if let arrival = onArrival, x.isResting(within: 1.5), width.isResting(within: 1.5) {
+            onArrival = nil
+            DispatchQueue.main.async(execute: arrival)
+        }
+        if let settled = onSettled, lift.target == 0, lift.isResting(within: 0.004),
+           stretch.isResting(within: 0.004) {
+            onSettled = nil
+            DispatchQueue.main.async(execute: settled)
+        }
     }
 }
 
 /// The labels, refracted where the lens is. A view of its own so that the lens
-/// moving re-evaluates this and not the labels inside it.
+/// moving re-draws this and not the labels inside it.
 private struct LensRefracted<Content: View>: View {
     let lens: LensState
     let band: CGRect
     @ViewBuilder let content: Content
 
     var body: some View {
-        content.modifier(LensRefraction(geometry: lens.geometry(band: band), active: lens.engaged))
+        TimelineView(.animation(minimumInterval: nil, paused: !lens.engaged)) { context in
+            content.modifier(LensRefraction(geometry: lens.engaged ? lens.geometry(at: context.date, band: band) : nil))
+        }
     }
 }
 
-/// The glass under the selected label. It fades as the lens lifts out of it and
-/// returns as the lens settles, riding with the lens in between so the two are
-/// never in different places.
-private struct LensPlatter: View {
+/// Under the labels: the platter, and the drop's own glass. System glass laid over
+/// the labels frosts them, where a lens has to show them sharp.
+///
+/// The platter sits under the selected label at rest. Once the drop is in play it
+/// rides with the drop and fades as the drop lifts out of it, so the two are never
+/// in different places.
+private struct LensBackground: View {
     let lens: LensState
     let band: CGRect
     let resting: CGRect?
     let selectedIndex: Int
 
     var body: some View {
-        if let rect = lens.engaged ? lens.geometry(band: band).base : resting {
-            Color.clear
-                .glassEffect(.regular, in: .rect(cornerRadius: 9, style: .continuous))
-                .frame(width: rect.width, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
-                .opacity(1 - lens.lift)
+        if lens.engaged {
+            TimelineView(.animation) { context in
+                let geometry = lens.geometry(at: context.date, band: band)
+                let base = geometry.base
+                let rect = geometry.rect
+                ZStack(alignment: .topLeading) {
+                    platter(base).opacity(1 - geometry.lift)
+                    Color.clear
+                        .glassEffect(.clear, in: Capsule())
+                        .frame(width: rect.width, height: rect.height)
+                        .offset(x: rect.minX, y: rect.minY)
+                        .opacity(min(geometry.lift, 1))
+                }
+            }
+        } else if let resting {
+            platter(resting)
                 .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedIndex)
         }
     }
-}
 
-private struct LensBodyHost: View {
-    let lens: LensState
-    let band: CGRect
-
-    var body: some View {
-        LensBody(geometry: lens.geometry(band: band))
-    }
-}
-
-/// The drop's glass, under the labels: system glass laid over them frosts them,
-/// where a lens has to show them sharp.
-private struct LensBody: View, Animatable {
-    var geometry: LensGeometry
-
-    var animatableData: LensGeometry.AnimatableData {
-        get { geometry.animatableData }
-        set { geometry.animatableData = newValue }
-    }
-
-    var body: some View {
-        if geometry.isVisible {
-            let rect = geometry.rect
-            Color.clear
-                .glassEffect(.clear, in: Capsule())
-                .frame(width: rect.width, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
-                .opacity(geometry.lift)
-                .allowsHitTesting(false)
-        }
+    private func platter(_ rect: CGRect) -> some View {
+        Color.clear
+            .glassEffect(.regular, in: .rect(cornerRadius: 9, style: .continuous))
+            .frame(width: rect.width, height: rect.height)
+            .offset(x: rect.minX, y: rect.minY)
     }
 }
 
@@ -325,7 +426,11 @@ private struct LensOverlay: View {
     let rowSize: CGSize
 
     var body: some View {
-        Lens(geometry: lens.geometry(band: band), pointer: lens.pointer, rowSize: rowSize)
+        if lens.engaged {
+            TimelineView(.animation) { context in
+                Lens(geometry: lens.geometry(at: context.date, band: band), pointer: lens.pointer, rowSize: rowSize)
+            }
+        }
     }
 }
 
@@ -343,7 +448,7 @@ struct LensGeometry: Equatable {
         CGRect(x: centreX - width / 2, y: band.minY, width: width, height: band.height)
     }
 
-    /// The lens itself: grown past the track as it lifts, squashed as it stretches.
+    /// The lens itself: grown past the track as it lifts, drawn out as it moves.
     var rect: CGRect {
         let grown = base.insetBy(dx: -4 * lift, dy: -5 * lift)
         let w = grown.width * (1 + stretch), h = grown.height * (1 - stretch * 0.5)
@@ -353,49 +458,29 @@ struct LensGeometry: Equatable {
     static let maxMagnification: CGFloat = 1.3
     var magnification: CGFloat { 1 + (Self.maxMagnification - 1) * lift }
     var isVisible: Bool { lift > 0.002 }
-
-    typealias AnimatableData = AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>>
-
-    var animatableData: AnimatableData {
-        get { .init(.init(centreX, width), .init(lift, stretch)) }
-        set {
-            centreX = newValue.first.first
-            width = newValue.first.second
-            lift = newValue.second.first
-            stretch = newValue.second.second
-        }
-    }
 }
 
-/// Refracts the labels through the lens, on the GPU.
-///
-/// Animatable, so the refraction moves frame by frame with the glass rather than
-/// jumping to where the glass is going. Off whenever the lens is down: a layer
-/// effect renders the view offscreen, and a resting control has no business
-/// paying for that.
-private struct LensRefraction: ViewModifier, Animatable {
-    var geometry: LensGeometry
-    let active: Bool
-
-    var animatableData: LensGeometry.AnimatableData {
-        get { geometry.animatableData }
-        set { geometry.animatableData = newValue }
-    }
+/// Refracts the labels through the lens, on the GPU. Off whenever the lens is
+/// down: a layer effect renders the view offscreen, and a resting control has no
+/// business paying for that.
+private struct LensRefraction: ViewModifier {
+    let geometry: LensGeometry?
 
     func body(content: Content) -> some View {
         if let library = LensShaders.library {
+            let geometry = geometry ?? LensGeometry(centreX: 0, width: 0, lift: 0, stretch: 0, band: .zero)
             let rect = geometry.rect
             content.layerEffect(
                 library.glassLens(
                     .float4(rect.minX, rect.minY, rect.width, rect.height),
                     .float(geometry.magnification),
-                    .float(1 + 0.8 * geometry.lift),
-                    .float(0.012 * geometry.lift)
+                    .float(1 + 0.8 * min(geometry.lift, 1)),
+                    .float(0.012 * min(geometry.lift, 1))
                 ),
                 // The furthest the lens reaches for what it shows: its half-width's
                 // worth of magnification, and the fringe on top.
                 maxSampleOffset: CGSize(width: rect.width * 0.3 + 4, height: rect.height * 0.3 + 4),
-                isEnabled: active && geometry.isVisible
+                isEnabled: geometry.isVisible
             )
         } else {
             content
@@ -425,23 +510,14 @@ enum LensShaders {
 
 /// The lifted drop's light: its shadow, glow and rim, painted over the labels.
 ///
-/// An `Animatable` view, so SwiftUI hands it every in-between geometry of an
-/// animation and the painting keeps step with the glass. Drawn only while
-/// lifted; at rest it is nothing.
-///
 /// Painted in one `Canvas` rather than built from views: as a shadow, masks and a
-/// dozen strokes, the lens was rebuilt as a view tree on every frame of every
-/// animation, and that, not the drawing, was what a drag cost.
-private struct Lens: View, Animatable {
+/// dozen strokes, the lens was rebuilt as a view tree on every frame, and that,
+/// not the drawing, was what moving it cost.
+private struct Lens: View {
     @Environment(\.colorScheme) private var colorScheme
-    var geometry: LensGeometry
+    let geometry: LensGeometry
     let pointer: CGFloat
     let rowSize: CGSize
-
-    var animatableData: LensGeometry.AnimatableData {
-        get { geometry.animatableData }
-        set { geometry.animatableData = newValue }
-    }
 
     /// Room around the row for what reaches past it: the lifted lens, its shadow.
     private let margin: CGFloat = 16
@@ -574,15 +650,14 @@ extension GlassSegmented {
         self._selection = selection
         self.segmentWidth = segmentWidth
         let lens = LensState()
-        lens.x = x
-        lens.width = width
-        lens.lift = 1
+        lens.x.jump(to: x)
+        lens.width.jump(to: width)
+        lens.lift.jump(to: 1)
         lens.pointer = x
         lens.engaged = true
         self._lens = State(initialValue: lens)
     }
 }
-
 #Preview("Segmented lens") {
     let items: [GlassSegmented<Int>.Item] = ["Обзор", "Вентиляторы", "Датчики", "Настройки"]
         .enumerated().map { .init(value: $0.offset, title: $0.element) }
