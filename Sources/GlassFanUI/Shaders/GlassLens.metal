@@ -22,9 +22,10 @@ static float capsuleDistance(float2 p, float2 centre, float2 halfSize) {
 /// - magnification: 1 leaves the content as it is.
 /// - brighten: how much to lift what is under the glass; 1 leaves it.
 /// - fringe: how far the colour channels part at the rim, as a fraction of scale.
+/// - darkInk: 1 when the content is dark marks on a light ground, 0 for light on dark.
 [[ stitchable ]]
 half4 glassLens(float2 position, SwiftUI::Layer layer,
-                float4 lens, float magnification, float brighten, float fringe)
+                float4 lens, float magnification, float brighten, float fringe, float darkInk)
 {
     float2 halfSize = lens.zw * 0.5;
     float2 centre = lens.xy + halfSize;
@@ -52,7 +53,21 @@ half4 glassLens(float2 position, SwiftUI::Layer layer,
     half4 green = layer.sample(centre + offset * scale);
     half4 red   = layer.sample(centre + offset * scale * (1.0 + split));
     half4 blue  = layer.sample(centre + offset * scale * (1.0 - split));
-    half4 seen = half4(red.r, green.g, blue.b, max(green.a, max(red.a, blue.a)));
+    half coverage = max(green.a, max(red.a, blue.a));
+    half4 seen;
+    if (darkInk > 0.5) {
+        // Dark letters on a light ground. Splitting their colour splits nothing -
+        // they have none - and only smears them. What parts at a real edge is the
+        // light behind: where one colour's view misses the letter, that colour
+        // shows through. Premultiplied so that over a light ground the letter
+        // reads in its own ink where every colour covers it, and each fringe in
+        // the colour that got past it.
+        half3 ink = green.a > 0.0 ? green.rgb / green.a : half3(0.0);
+        half3 perChannel = half3(red.a, green.a, blue.a);
+        seen = half4(half3(coverage) - perChannel * (half3(1.0) - ink), coverage);
+    } else {
+        seen = half4(red.r, green.g, blue.b, coverage);
+    }
 
     // Lift towards full strength, keeping colour premultiplied by the new alpha.
     if (seen.a > 0.0) {

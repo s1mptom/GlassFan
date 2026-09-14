@@ -457,6 +457,11 @@ struct LensGeometry: Equatable {
 
     static let maxMagnification: CGFloat = 1.3
     var magnification: CGFloat { 1 + (Self.maxMagnification - 1) * lift }
+
+    /// How far the colours part at the glass's curved edges: clearly, while the
+    /// drop is up, and more as it moves - drawn out by its speed, as the stretch
+    /// is. Gone again as it settles into a platter.
+    var fringe: CGFloat { min(lift, 1) * (0.02 + max(stretch, 0) * 0.15) }
     var isVisible: Bool { lift > 0.002 }
 }
 
@@ -464,6 +469,7 @@ struct LensGeometry: Equatable {
 /// down: a layer effect renders the view offscreen, and a resting control has no
 /// business paying for that.
 private struct LensRefraction: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     let geometry: LensGeometry?
 
     func body(content: Content) -> some View {
@@ -475,11 +481,14 @@ private struct LensRefraction: ViewModifier {
                     .float4(rect.minX, rect.minY, rect.width, rect.height),
                     .float(geometry.magnification),
                     .float(1 + 0.8 * min(geometry.lift, 1)),
-                    .float(0.012 * min(geometry.lift, 1))
+                    .float(geometry.fringe),
+                    // The ink follows the scheme: dark labels in light mode.
+                    .float(colorScheme == .light ? 1 : 0)
                 ),
                 // The furthest the lens reaches for what it shows: its half-width's
                 // worth of magnification, and the fringe on top.
-                maxSampleOffset: CGSize(width: rect.width * 0.3 + 4, height: rect.height * 0.3 + 4),
+                maxSampleOffset: CGSize(width: rect.width * (0.3 + geometry.fringe) + 4,
+                                        height: rect.height * (0.3 + geometry.fringe) + 4),
                 isEnabled: geometry.isVisible
             )
         } else {
@@ -611,11 +620,14 @@ private struct Lens: View {
             Capsule().path(in: lens.insetBy(dx: inset, dy: inset).offsetBy(dx: dx, dy: dy))
         }
 
-        // Colour fringe, just outside the rim.
-        context.stroke(ring(-1.7, dx: -0.4, dy: -0.3),
-                       with: .color(Color(red: 1, green: 0.35, blue: 0.55).opacity(0.22)), lineWidth: 1)
-        context.stroke(ring(-1.7, dx: 0.4, dy: 0.3),
-                       with: .color(Color(red: 0.3, green: 0.75, blue: 1).opacity(0.22)), lineWidth: 1)
+        // Colour fringe, just outside the rim, parting further and showing more as
+        // the glass inside it does.
+        let part = geometry.fringe / 0.02
+        let tint = min(0.18 + 0.08 * part, 0.42)
+        context.stroke(ring(-1.7, dx: -0.4 * part, dy: -0.3 * part),
+                       with: .color(Color(red: 1, green: 0.35, blue: 0.55).opacity(tint)), lineWidth: 1)
+        context.stroke(ring(-1.7, dx: 0.4 * part, dy: 0.3 * part),
+                       with: .color(Color(red: 0.3, green: 0.75, blue: 1).opacity(tint)), lineWidth: 1)
 
         context.stroke(ring(-0.25), with: .color(.black.opacity(0.32)), lineWidth: 0.5)
 
