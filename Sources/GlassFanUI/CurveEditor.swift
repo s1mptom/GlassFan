@@ -11,8 +11,20 @@ struct CurveEditor: View {
     let currentRPM: Double?
     var onCommit: () -> Void
 
+    /// For previews: a point to show the readout for, as if the pointer were on it.
+    var highlighted: Int? = nil
+
     private let tempRange: ClosedRange<Double> = 30...100
     @State private var dragging: Int?
+    @State private var hovered: Int?
+    @State private var readoutSize = CGSize(width: 150, height: 40)
+
+    /// The point whose values are on show: the one being dragged, or else the one
+    /// under the pointer.
+    private var inspected: Int? {
+        guard let index = dragging ?? hovered ?? highlighted, curve.points.indices.contains(index) else { return nil }
+        return index
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -24,9 +36,11 @@ struct CurveEditor: View {
                 grid(in: plot)
                 minimumGuide(in: plot)
                 curveShape(in: plot)
+                guides(in: plot)
                 liveMarker(in: plot)
                 handles(in: plot)
                 axisLabels(in: plot)
+                readout(in: plot)
             }
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { location in
@@ -131,11 +145,19 @@ struct CurveEditor: View {
                 .scaleEffect(dragging == index ? 1.25 : 1)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: dragging)
                 .position(position(point, in: plot))
+                .onHover { inside in
+                    if inside { hovered = index } else if hovered == index { hovered = nil }
+                }
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            dragging = index
-                            curve.movePoint(at: index, to: self.point(from: value.location, in: plot))
+                            let current = dragging ?? index
+                            let moved = self.point(from: value.location, in: plot)
+                            curve.movePoint(at: current, to: moved)
+                            // The points are kept in temperature order, so dragging
+                            // one past a neighbour changes its place in the list.
+                            // Holding on to the old place moved the neighbour instead.
+                            dragging = curve.points.firstIndex(of: moved) ?? current
                         }
                         .onEnded { _ in
                             dragging = nil
@@ -144,8 +166,12 @@ struct CurveEditor: View {
                 )
                 .onTapGesture(count: 2) {
                     curve.removePoint(at: index)
+                    hovered = nil
                     onCommit()
                 }
+                .accessibilityLabel(L10n.t("Точка кривой", "Curve point"))
+                .accessibilityValue(L10n.t("\(Int(point.temperature)) градусов, \(Int(point.rpm)) оборотов в минуту",
+                                           "\(Int(point.temperature)) degrees, \(Int(point.rpm)) rpm"))
         }
     }
 
@@ -193,8 +219,54 @@ struct CurveEditor: View {
                               y: nearFloor ? marker.y - 20
                                            : min(max(marker.y, plot.minY + 12), plot.maxY - 12))
                     .animation(.easeInOut(duration: 0.8), value: currentTemp)
+                    // Out of the way of the point being set, which is what matters then.
+                    .opacity(inspected == nil ? 1 : 0.25)
+                    .animation(.easeOut(duration: 0.15), value: inspected)
             }
         }
+    }
+
+    /// Dashed lines from the inspected point down to the temperature axis and across
+    /// to the speed axis, so its place on both scales can be read off.
+    private func guides(in plot: CGRect) -> some View {
+        Group {
+            if let index = inspected {
+                let at = position(curve.points[index], in: plot)
+                Path { path in
+                    path.move(to: CGPoint(x: at.x, y: plot.maxY))
+                    path.addLine(to: at)
+                    path.addLine(to: CGPoint(x: plot.minX, y: at.y))
+                }
+                .stroke(Palette.calm.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The inspected point's values beside it: its temperature and the speed the fan
+    /// is set to there, and what that speed means when it is not an ordinary one.
+    ///
+    /// Above the point, or below it when there is no room above, and kept inside
+    /// the plot. It follows the point exactly - an animation here would trail
+    /// behind the pointer it is labelling.
+    private func readout(in plot: CGRect) -> some View {
+        Group {
+            if let index = inspected {
+                let point = curve.points[index]
+                let at = position(point, in: plot)
+                let gap: CGFloat = 16
+                let above = at.y - gap - readoutSize.height / 2
+                let fitsAbove = above - readoutSize.height / 2 >= plot.minY - 6
+                let x = min(max(at.x, plot.minX + readoutSize.width / 2),
+                            plot.maxX - readoutSize.width / 2 + 8)
+                CurveReadout(point: point, limits: limits)
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { readoutSize = $0 }
+                    .position(x: x, y: fitsAbove ? above : at.y + gap + readoutSize.height / 2)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: inspected)
+        .allowsHitTesting(false)
     }
 
     private func axisLabels(in plot: CGRect) -> some View {
@@ -226,4 +298,71 @@ struct CurveEditor: View {
             }
         }
     }
+}
+
+/// Temperature and speed of one curve point, as a small label.
+private struct CurveReadout: View {
+    let point: CurvePoint
+    let limits: FanLimits
+
+    /// What the speed amounts to, when that is worth saying.
+    private var note: String {
+        if point.rpm <= 0 { return L10n.t("вентилятор стоит", "fan stopped") }
+        if point.rpm < limits.minRPM { return L10n.t("ниже минимума SMC", "below SMC minimum") }
+        if point.rpm >= limits.maxRPM { return L10n.t("максимум", "maximum") }
+        return L10n.t("об/мин", "rpm")
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            value(Format.temperature(point.temperature), caption: L10n.t("температура", "temperature"))
+            Rectangle()
+                .fill(Palette.ink.opacity(0.14))
+                .frame(width: 0.5, height: 24)
+            value(Format.rpm(point.rpm), caption: note)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        // A plain surface, not glass: it moves with every step of a drag.
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Palette.surface.opacity(0.9))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Palette.ink.opacity(0.12), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+        )
+        .fixedSize()
+    }
+
+    private func value(_ text: String, caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(text)
+                .font(.system(size: 14, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(Palette.ink)
+            Text(caption)
+                .font(.system(size: 9.5))
+                .foregroundStyle(Palette.ink.opacity(0.45))
+        }
+    }
+}
+
+#Preview("Curve readout") {
+    @Previewable @State var curve = FanCurve(points: [
+        CurvePoint(temperature: 45, rpm: 0),
+        CurvePoint(temperature: 62, rpm: 1200),
+        CurvePoint(temperature: 78, rpm: 3400),
+        CurvePoint(temperature: 92, rpm: 5348),
+    ])
+    VStack(spacing: 0) {
+        ForEach([1, 2], id: \.self) { point in
+            CurveEditor(curve: $curve, limits: FanLimits(minRPM: 1499, maxRPM: 5348),
+                        currentTemp: 58, currentRPM: 1700, onCommit: {}, highlighted: point)
+                .frame(height: 260)
+                .padding(20)
+        }
+    }
+    .frame(width: 600)
+    .background(Color(red: 0.11, green: 0.13, blue: 0.18))
+    .environment(\.colorScheme, .dark)
 }

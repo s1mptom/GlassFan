@@ -7,8 +7,9 @@
 *.xcuserstate
 xcuserdata/
 
-# memsearch runtime
-.memsearch/.index.pid
+# Session memory kept by a Claude Code plugin: notes about working on the project,
+# not part of it.
+.memsearch/
 
 # The design canvas as published: rebuilt from the working files beside it.
 design/glassfan-icon/glassfan-icon.html
