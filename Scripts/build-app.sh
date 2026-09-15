@@ -43,8 +43,31 @@ cp "$ROOT/Scripts/install-daemon.sh"                 "$APP/Contents/Resources/"
 cp "$ROOT/Scripts/uninstall-daemon.sh"               "$APP/Contents/Resources/"
 cp "$ROOT/Scripts/com.glassfan.fanctld.plist"         "$APP/Contents/Resources/"
 cp "$ROOT/build/AppIcon.icns"                        "$APP/Contents/Resources/"
-# The interface's resources: the compiled glass lens shader.
-cp -R "$ROOT/.build/$CONFIG/GlassFan_GlassFanUI.bundle" "$APP/Contents/Resources/"
+# The interface's resources: the glass lens shader, compiled here rather than
+# taken from SwiftPM. Xcode 27's build system compiles the package's .metal files
+# into a library; Xcode 26's copies the source across uncompiled, and an app built
+# with it had no shader at all. Laid out the way the newer build system lays it out.
+echo "==> Shaders"
+UIBUNDLE="$APP/Contents/Resources/GlassFan_GlassFanUI.bundle"
+AIR="$(mktemp -d)"
+mkdir -p "$UIBUNDLE/Contents/Resources"
+for shader in "$ROOT"/Sources/GlassFanUI/Shaders/*.metal; do
+    xcrun -sdk macosx metal -c -target air64-apple-macos26.0 -o "$AIR/$(basename "$shader" .metal).air" "$shader"
+done
+xcrun -sdk macosx metallib -o "$UIBUNDLE/Contents/Resources/default.metallib" "$AIR"/*.air
+rm -rf "$AIR"
+cat > "$UIBUNDLE/Contents/Info.plist" <<BUNDLEPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>com.glassfan.app.resources</string>
+    <key>CFBundleName</key><string>GlassFan_GlassFanUI</string>
+    <key>CFBundlePackageType</key><string>BNDL</string>
+</dict>
+</plist>
+BUNDLEPLIST
+[[ -s "$UIBUNDLE/Contents/Resources/default.metallib" ]] || { echo "the shader library was not built"; exit 1; }
 chmod 755 "$APP/Contents/Resources/fanctld" "$APP/Contents/Resources/"*.sh
 
 cat > "$APP/Contents/Info.plist" <<PLIST
