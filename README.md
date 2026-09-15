@@ -13,6 +13,8 @@
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111?logo=apple">
   <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-M1%20Pro%20%C2%B7%20M1%20Max-3987e5">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
+  <a href="https://github.com/s1mptom/GlassFan/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/s1mptom/GlassFan?label=download&color=2ea44f"></a>
+  <a href="https://github.com/s1mptom/GlassFan/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/s1mptom/GlassFan/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 <p align="center">
@@ -82,11 +84,31 @@ supported.
 Fans and their limits are discovered at startup (`FNum`, `F<n>Mn`, `F<n>Mx`), and
 every sensor list is read off the machine, so nothing is hard-coded to one model.
 
-## Install
+## Download
 
-GlassFan is built from source. You need **Xcode 26** and its **Metal toolchain**
-(Xcode 26 ships the Metal compiler as a separate component; the glass drop is a
-Metal shader):
+Get **GlassFan.dmg** from the [latest release](https://github.com/s1mptom/GlassFan/releases/latest),
+open it and drag GlassFan to Applications. No Xcode, no building.
+
+Releases are not notarised by Apple yet, so macOS stops the app the first time it
+opens (*"Apple could not verify GlassFan is free of malware"*). Open it once, then go to
+**System Settings → Privacy & Security** and click **Open Anyway** next to GlassFan —
+or run `xattr -dr com.apple.quarantine /Applications/GlassFan.app` in Terminal.
+
+The app only shows temperatures until its helper is installed: open
+**Settings → Fan control → Install**. macOS asks for your password once, and the
+daemon starts with the system from then on. When a newer release carries a newer
+daemon, the same place offers **Update**.
+
+If another fan utility such as Macs Fan Control is running its privileged helper,
+quit it first — both would write the same SMC keys.
+
+To remove GlassFan, use **Settings → Fan control → Remove**, then delete the app.
+The fans return to system control as soon as the daemon stops.
+
+## Build from source
+
+You need **Xcode 26** and its **Metal toolchain** (Xcode 26 ships the Metal compiler as
+a separate component; the glass drop is a Metal shader):
 
 ```sh
 xcodebuild -downloadComponent MetalToolchain
@@ -101,14 +123,7 @@ cd GlassFan
 open GlassFan.app
 ```
 
-Move `GlassFan.app` to `/Applications` if you like. On first launch the app only
-shows temperatures: controlling fans needs a privileged helper. Open
-**Settings → Fan control → Install**; macOS asks for your password once, and the
-daemon starts with the system from then on. When a newer build of the app carries
-a newer daemon, the same place offers **Update**.
-
-If another fan utility such as Macs Fan Control is running its privileged helper,
-quit it first — both would write the same SMC keys.
+Then install the helper from **Settings → Fan control → Install**, as above.
 
 <details>
 <summary>Installing from the command line instead</summary>
@@ -122,8 +137,26 @@ quit it first — both would write the same SMC keys.
 anything, and stops Macs Fan Control's helper if it finds it running.
 </details>
 
-To remove GlassFan, use **Settings → Fan control → Remove** (or `uninstall.sh`),
-then delete the app. The fans return to system control as soon as the daemon stops.
+### Releases
+
+Pushing a tag like `v0.2.0` runs the [release workflow](.github/workflows/release.yml):
+it tests, builds the app on a `macos-26` runner, packages a disk image and a zip with
+checksums, and publishes them as a GitHub release. The same packaging runs locally:
+
+```sh
+./Scripts/package-release.sh 0.2.0     # → dist/GlassFan-0.2.0.dmg, .zip, SHA256SUMS.txt
+```
+
+With a Developer ID the workflow also signs with the hardened runtime and notarises,
+and the "Open Anyway" step disappears for everyone. It needs these repository secrets:
+
+| Secret | What it is |
+|---|---|
+| `DEVELOPER_ID_CERTIFICATE` | The *Developer ID Application* certificate and key, exported as `.p12`, base64-encoded |
+| `DEVELOPER_ID_CERTIFICATE_PASSWORD` | The password of that `.p12` |
+| `NOTARY_APPLE_ID` | The Apple ID of the developer account |
+| `NOTARY_TEAM_ID` | Its team ID |
+| `NOTARY_PASSWORD` | An app-specific password for that Apple ID |
 
 ## The glass drop
 
@@ -225,7 +258,11 @@ silicon, сделанный под macOS 26 и Liquid Glass.
 - **Нужно:** macOS 26 или новее, Apple silicon. Проверено на MacBook Pro M1 Max;
   MacBook Pro на M1 Pro устроены так же (те же ключи SMC и датчики). MacBook Air —
   только температуры. Intel не поддерживается.
-- **Сборка:** Xcode 26 и компонент Metal
+- **Скачать:** GlassFan.dmg из [последнего релиза](https://github.com/s1mptom/GlassFan/releases/latest),
+  перетащить в Программы. Релиз не нотаризован: при первом запуске откройте
+  **Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть»**
+  или выполните `xattr -dr com.apple.quarantine /Applications/GlassFan.app`.
+- **Собрать самому:** Xcode 26 и компонент Metal
   (`xcodebuild -downloadComponent MetalToolchain`), затем `./Scripts/build-app.sh`
   и `open GlassFan.app`.
 - **Управление вентиляторами:** Настройки → Управление вентиляторами → Установить

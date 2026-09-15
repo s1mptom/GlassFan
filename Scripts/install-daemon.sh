@@ -35,11 +35,17 @@ if [[ -f "/Library/Application Support/MacFans/config.json" && ! -f "/Library/Ap
 fi
 
 mkdir -p "$DEST"
-cp "$HERE/fanctld" "$DEST/fanctld"
+# -X leaves the app's extended attributes behind. An app downloaded from a release
+# carries the quarantine flag on every file inside it; opening the app clears it for
+# the app, not for a copy of its daemon, and a quarantined binary launched by launchd
+# is refused. The daemon is installed as a file of our own, not a download.
+cp -X "$HERE/fanctld" "$DEST/fanctld"
+xattr -c "$DEST/fanctld" 2>/dev/null || true
 chown root:wheel "$DEST/fanctld"
 chmod 755 "$DEST/fanctld"
 
-cp "$HERE/com.glassfan.fanctld.plist" "$PLIST"
+cp -X "$HERE/com.glassfan.fanctld.plist" "$PLIST"
+xattr -c "$PLIST" 2>/dev/null || true
 chown root:wheel "$PLIST"
 chmod 644 "$PLIST"
 

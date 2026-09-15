@@ -14,3 +14,6 @@ xcuserdata/
 # The design canvas as published: rebuilt from the working files beside it.
 design/glassfan-icon/glassfan-icon.html
 __pycache__/
+
+# Release packages, built by Scripts/package-release.sh.
+dist/

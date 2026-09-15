@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      # Xcode 26 ships the Metal compiler as a separate component; the glass lens
+      # shader will not build without it.
+      - name: Install the Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: Assemble the app
+        run: ./Scripts/build-app.sh release
