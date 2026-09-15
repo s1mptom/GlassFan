@@ -50,6 +50,24 @@ chown root:wheel "$PLIST"
 chmod 644 "$PLIST"
 
 launchctl bootout system/"$LABEL" 2>/dev/null || true
-launchctl bootstrap system "$PLIST"
+# bootout returns before the old daemon has finished going - on the way out it
+# hands the fans back and saves its history - and bootstrapping the label while
+# it is still leaving fails with "Bootstrap failed: 5: Input/output error". That
+# is what an update ran into. Wait for it to be gone, then give bootstrap a few
+# tries in case launchd is still tidying up after it.
+for _ in $(seq 1 50); do
+    launchctl print system/"$LABEL" >/dev/null 2>&1 || break
+    sleep 0.2
+done
+for attempt in 1 2 3 4 5; do
+    if launchctl bootstrap system "$PLIST"; then
+        break
+    fi
+    if [[ $attempt -eq 5 ]]; then
+        echo "launchctl bootstrap failed"
+        exit 1
+    fi
+    sleep 1
+done
 
 echo "installed"

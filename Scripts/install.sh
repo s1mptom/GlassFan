@@ -59,7 +59,17 @@ run_root chmod 644 "$PLIST"
 
 echo "==> Loading the daemon"
 run_root launchctl bootout system/"$LABEL" 2>/dev/null || true
-run_root launchctl bootstrap system "$PLIST"
+# bootout returns before the old daemon has gone; bootstrapping while it is still
+# leaving fails with "5: Input/output error". Wait for it, then retry a little.
+for _ in $(seq 1 50); do
+    launchctl print system/"$LABEL" >/dev/null 2>&1 || break
+    sleep 0.2
+done
+for attempt in 1 2 3 4 5; do
+    if run_root launchctl bootstrap system "$PLIST"; then break; fi
+    [[ $attempt -lt 5 ]] || { echo "launchctl bootstrap failed"; exit 1; }
+    sleep 1
+done
 sleep 2
 
 if run_root launchctl print system/"$LABEL" >/dev/null 2>&1; then
