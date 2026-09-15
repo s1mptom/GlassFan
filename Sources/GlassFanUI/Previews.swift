@@ -83,7 +83,7 @@ private struct PreviewShell: View {
 /// smear before the gaps between them close.
 #Preview("Blades at speed") {
     let limits = FanLimits(minRPM: 1499, maxRPM: 5348)
-    return HStack(spacing: 18) {
+    HStack(spacing: 18) {
         ForEach([0.0, 900, 1800, 2600, 3800, 5348], id: \.self) { rpm in
             VStack(spacing: 8) {
                 FanDial(rpm: rpm, limits: limits, controlled: rpm > 0, size: 116)

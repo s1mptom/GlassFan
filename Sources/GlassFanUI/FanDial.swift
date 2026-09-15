@@ -38,7 +38,10 @@ struct FanDial: View {
     private static let speedSteps = 10
     private static let topSpinRate: Double = 300
 
-    private var visibility = WindowVisibility.shared
+    // A constant, not a var: a private var with a default value makes the
+    // memberwise initializer private under Swift 6.2 (Xcode 26), which is what the
+    // release builds use.
+    private let visibility = WindowVisibility.shared
     @Environment(\.colorScheme) private var scheme
     @State private var discImage: CGImage?
 
