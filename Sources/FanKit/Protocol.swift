@@ -126,4 +126,16 @@ public enum ClientCommand: Codable, Sendable {
     case setConfig(AppConfig)
     /// Release every fan at once, whatever the config says. The panic button.
     case releaseAll
+    /// The user has quit GlassFan on purpose. Hand the fans back to the system and
+    /// stop applying the settings until someone opens the app again.
+    ///
+    /// Different from `releaseAll` in what it leaves behind: the panic button is a
+    /// decision about the settings and rewrites them to auto, while this one is a
+    /// decision about *now*. The modes and curves are untouched and come back with
+    /// the app.
+    ///
+    /// Different from quitting in the other sense, too. A crash sends nothing, and a
+    /// crash must not take the cooling with it - that is the whole reason the daemon
+    /// outlives the app. Only a deliberate goodbye is a goodbye.
+    case goodbye
 }

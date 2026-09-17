@@ -45,8 +45,11 @@ actual work.
 - **Menu bar** — both fans, the mode switch and the headline temperatures one click away.
 - **Liquid Glass throughout** — adjustable frost and tone for the window, and a
   segmented control whose selection you can pick up like a drop of glass (below).
-- **Safe by construction** — the app holds no privileges; if it quits or crashes the
-  fans stay managed, and if the daemon stops they go back to the system.
+- **Safe by construction** — the app holds no privileges; if it *crashes* the fans stay
+  managed, and if the daemon stops they go back to the system. Quitting GlassFan on
+  purpose hands the fans back to the system and leaves your settings alone — they apply
+  again the moment you open it. Closing the window is not quitting: the app stays in the
+  menu bar and goes on doing its job.
 - **Russian and English**, following the system language.
 
 <table>
@@ -359,6 +362,9 @@ silicon, сделанный под macOS 26 и Liquid Glass.
   (macOS спросит пароль один раз).
 - **Режимы:** Системный, Фиксированный, Кривая. Кривая может опускаться до 0 —
   вентилятор остановится.
+- **Выход из приложения** возвращает вентиляторы системе, настройки при этом
+  сохраняются и применяются снова при следующем запуске. Закрытие окна — не выход:
+  приложение остаётся в меню-баре и продолжает управлять. Падение управление не снимает.
 - **Датчики:** все ~220 с понятными названиями, основные показаны по умолчанию.
 
 </details>

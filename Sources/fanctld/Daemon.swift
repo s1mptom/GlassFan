@@ -34,6 +34,12 @@ final class Daemon {
     /// taken back: more evidence refines the sensors still unattributed, it does not
     /// rename the ones the user has been reading for a week.
     private var sensorEngines: [String: Engine] = [:]
+    /// Set when the user quit GlassFan on purpose: the settings are kept but not
+    /// applied, and the fans are the system's until the app opens again. Never
+    /// restored from disk - a daemon that starts up has no reason to think anybody
+    /// said goodbye to it, and starting suspended would silently disable a curve
+    /// after a reboot.
+    private var suspended = false
     private var lastAffinityCheck = Date.distantPast
     private var lastSnapshot: Snapshot?
     private var lastTick = Date()
@@ -225,8 +231,12 @@ final class Daemon {
         var readings: [FanReading] = []
         for fan in hardware.fans {
             guard var controller = controllers[fan.index] else { continue }
-            let target = controller.update(temperatures: temperatures, emergencyTemp: config.emergencyTemp)
+            let decided = controller.update(temperatures: temperatures, emergencyTemp: config.emergencyTemp)
             controllers[fan.index] = controller
+            // Suspended is not a mode, so the controller still runs and the chart
+            // still has a driving temperature to show when the app comes back. It is
+            // only the writing that stops.
+            let target = suspended ? nil : decided
 
             // Whether we are actually in control is decided by the write, not by the
             // intention behind it.
@@ -312,7 +322,11 @@ final class Daemon {
             guard let self else { return }
             switch command {
             case .hello:
-                break
+                // Someone has the app open again, so the settings apply again.
+                if self.suspended {
+                    self.suspended = false
+                    Log.info("client back - applying the fan settings again")
+                }
 
             case .setConfig(let newConfig):
                 let intervalChanged = newConfig.pollInterval != self.config.pollInterval
@@ -324,6 +338,14 @@ final class Daemon {
                 }
                 Log.info("config updated: " + newConfig.fans
                     .map { "fan\($0.id)=\($0.mode.rawValue)" }.joined(separator: " "))
+
+            case .goodbye:
+                // Deliberate, so the fans go back to the system - but the settings
+                // stay exactly as they are, ready for the next launch.
+                Log.info("GlassFan was quit - fans back to the system until it opens again")
+                self.suspended = true
+                self.hardware.releaseAll()
+                for index in self.controllers.keys { self.controllers[index]?.reset() }
 
             case .releaseAll:
                 Log.warn("release requested by client")

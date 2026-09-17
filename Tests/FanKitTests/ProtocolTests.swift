@@ -37,6 +37,19 @@ struct ProtocolTests {
         #expect(cfg.fans.count == 2)
     }
 
+    @Test("a goodbye is its own command, not a release in disguise")
+    func goodbyeRoundTrip() throws {
+        let data = try NDJSONEncoder.encode(ClientCommand.goodbye)
+        var buffer = NDJSONDecoderBuffer()
+        guard case .goodbye? = try buffer.append(data, as: ClientCommand.self).first else {
+            Issue.record("wrong case"); return
+        }
+        // The distinction is the point: the panic button rewrites the settings to
+        // auto, a goodbye leaves them alone and only stops applying them.
+        let panic = try NDJSONEncoder.encode(ClientCommand.releaseAll)
+        #expect(panic != data)
+    }
+
     @Test("a message split across chunks is reassembled")
     func splitAcrossChunks() throws {
         let data = try NDJSONEncoder.encode(ClientCommand.hello)

@@ -30,6 +30,22 @@ public struct GlassFanApp: App {
         defaults.set(true, forKey: marker)
     }
 
+    /// Hands the fans back when the user quits on purpose, and only then.
+    ///
+    /// Closing the window is not quitting - the app is still there in the menu bar,
+    /// still showing what the fans are doing, and the settings go on applying. Quit,
+    /// though, is someone saying they are done, and coming back to a Mac whose fans
+    /// are still pinned by an app that is not running is a surprise nobody asked for.
+    ///
+    /// `willTerminateNotification` is exactly the right hook because of what it does
+    /// *not* fire for: a crash, a kill, a power cut. The daemon is meant to outlive
+    /// those, and it does.
+    private static func sayGoodbyeOnQuit(_ client: DaemonClient) {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { _ in MainActor.assumeIsolated { client.sayGoodbye() } }
+    }
+
     public var body: some Scene {
         Window(L10n.t("GlassFan", "GlassFan"), id: "main") {
             MainWindow()
@@ -39,6 +55,7 @@ public struct GlassFanApp: App {
                 .task {
                     client.start()
                     installer.refresh()
+                    Self.sayGoodbyeOnQuit(client)
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     // Measurement hook: what the app costs with its window closed
                     // can only be measured with the window closed, and nothing
