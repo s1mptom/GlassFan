@@ -13,6 +13,11 @@ struct FansView: View {
 
     private var fans: [FanReading] { client.snapshot?.fans ?? [] }
     private var fan: FanReading? { fans.first { $0.index == selected } ?? fans.first }
+    /// Empty on a Mac that reports no setpoints, and on a daemon too old to send them.
+    private var zoneTargets: [SMCZoneTarget] {
+        guard let snapshot = client.snapshot else { return [] }
+        return snapshot.smcZoneTargets ?? []
+    }
 
     var body: some View {
         if !client.isConnected {
@@ -42,9 +47,48 @@ struct FansView: View {
             if let fan, settings(for: fan).mode == .curve {
                 sensorBox(fan)
             }
+            if !zoneTargets.isEmpty {
+                smcTargetBox(zoneTargets)
+            }
             Spacer(minLength: 0)
         }
         .frame(width: 212)
+    }
+
+    /// What the SMC's own control is aiming for, whether or not we are holding the
+    /// fans somewhere else.
+    ///
+    /// Beside the fans rather than on one of them: a zone is an engine, not a fan.
+    /// On the M3 Pro, loading each engine alone showed one zone following the CPU and
+    /// the other the GPU; that the count matches the number of fans is a coincidence.
+    private func smcTargetBox(_ targets: [SMCZoneTarget]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionCaption(text: L10n.t("Автоматика SMC", "SMC's own control"))
+            ForEach(targets) { target in
+                HStack(spacing: 6) {
+                    Text(SensorCatalog.smcZoneName(target.zone))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.ink.opacity(0.45))
+                    Spacer(minLength: 0)
+                    Text(Format.temperature(target.target))
+                        .font(.system(size: 11.5, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.ink.opacity(0.8))
+                }
+            }
+            Text(L10n.t("Температура, к которой ведёт штатное управление",
+                        "What the automatic control steers towards"))
+                .font(.system(size: 10))
+                .foregroundStyle(Palette.ink.opacity(0.3))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Palette.ink.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Palette.ink.opacity(0.08), lineWidth: 0.5))
+        )
     }
 
     private func fanRow(_ item: FanReading) -> some View {

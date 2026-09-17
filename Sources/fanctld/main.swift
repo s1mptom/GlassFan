@@ -92,17 +92,71 @@ if CommandLine.arguments.contains("--stall-test") {
 if CommandLine.arguments.contains("--dump-sensors") {
     do {
         let smc = try SMCDevice()
+        let temperatures = smc.temperatureReadings()
+        // Names for the parts no table covers come from this machine's key layout,
+        // so the catalogue is told what this machine reports before anything is
+        // named - exactly as the daemon does it.
+        SensorCatalog.configure(temperatures.map { SensorReading(key: $0.key, value: $0.value) })
         // In list order, essential sensors marked: the table the interface shows.
-        for key in smc.allKeys().filter({ $0.hasPrefix("T") }).sorted(by: SensorCatalog.precedes) {
-            guard let reading = smc.read(key),
-                  SensorCatalog.looksLikeTemperature(key: key, type: reading.type, value: reading.value)
-            else { continue }
+        for (key, type, value) in temperatures.sorted(by: { SensorCatalog.precedes($0.key, $1.key) }) {
             let info = SensorCatalog.info(for: key)
-            print("\(key)\t\(reading.type)\t\(String(format: "%.1f", reading.value))\t\(info.group.rawValue)\t\(info.essential ? "*" : "")\t\(info.name)")
+            print("\(key)\t\(type)\t\(String(format: "%.1f", value))\t\(info.group.rawValue)\t\(info.essential ? "*" : "")\t\(info.name)")
+        }
+        for (zone, key, target) in smc.zoneTargets() {
+            let name = SensorCatalog.smcZoneName(zone)
+            print("\(key)\tflt \t\(String(format: "%.1f", target))\t-\t\t" +
+                  L10n.t("Уставка SMC · \(name)", "SMC setpoint · \(name)"))
         }
         exit(0)
     } catch {
         print("dump failed: \(error)")
+        exit(1)
+    }
+}
+
+/// Watches the machine and reports which engine each sensor answers to, the way the
+/// daemon learns it - but out loud, and over minutes rather than the daemon's much
+/// longer bar.
+///
+/// Watches. It puts no load on the machine and never will: the whole point of
+/// reading the power meters is that ordinary use already moves the engines apart, so
+/// nothing has to be heated on purpose to find out what is where. Whatever you were
+/// going to do with the Mac anyway is the experiment. Read-only, no privileges.
+if let index = CommandLine.arguments.firstIndex(of: "--learn") {
+    let seconds = Int(CommandLine.arguments.dropFirst(index + 1).first ?? "") ?? 300
+    do {
+        let smc = try SMCDevice()
+        guard let power = PowerReport() else {
+            print("IOReport is not available on this macOS, so engines cannot be learned")
+            exit(1)
+        }
+        var affinity = EngineAffinity()
+        print("watching for \(seconds)s, adding no load of its own - just use the Mac")
+        var last = Date()
+        for remaining in stride(from: seconds, to: 0, by: -1) {
+            Thread.sleep(forTimeInterval: 1)
+            let now = Date()
+            var temperatures: [String: Double] = [:]
+            for reading in smc.temperatureReadings() { temperatures[reading.key] = reading.value }
+            affinity.observe(power: power.sinceLastReading(), temperatures: temperatures,
+                             interval: now.timeIntervalSince(last))
+            last = now
+            if remaining % 30 == 0 {
+                print("  \(remaining)s to go, \(affinity.sampleCount) samples")
+                fflush(stdout)
+            }
+        }
+        let verdicts = affinity.verdicts(minimumSamples: 60)
+        print("\n\(verdicts.count) of \(affinity.sampleCount > 0 ? smc.temperatureReadings().count : 0) sensors attributed\n")
+        print("key     engine    share   fit   name")
+        for (key, verdict) in verdicts.sorted(by: { SensorCatalog.precedes($0.key, $1.key) }) {
+            print(String(format: "%-6s  %-8s  %4.0f%%  %4.2f  %@", (key as NSString).utf8String!,
+                         (verdict.engine.rawValue as NSString).utf8String!,
+                         verdict.share * 100, verdict.fit, SensorCatalog.info(for: key).name))
+        }
+        exit(0)
+    } catch {
+        print("learn failed: \(error)")
         exit(1)
     }
 }
@@ -119,13 +173,12 @@ if CommandLine.arguments.contains("--probe") {
                          fan.limits.minRPM, fan.limits.maxRPM,
                          hardware.isOwned(fan.index) ? "yes" : "no"))
         }
-        let temperatures = smc.allKeys().filter { $0.hasPrefix("T") }.compactMap { key -> (String, Double)? in
-            guard let reading = smc.read(key),
-                  SensorCatalog.looksLikeTemperature(key: key, type: reading.type, value: reading.value)
-            else { return nil }
-            return (key, reading.value)
-        }
+        let temperatures = smc.temperatureReadings().map { ($0.key, $0.value) }
+        SensorCatalog.configure(temperatures.map { SensorReading(key: $0.0, value: $0.1) })
         print("temperature sensors: \(temperatures.count)")
+        for (zone, key, target) in smc.zoneTargets() {
+            print(String(format: "  SMC steers %@ (%@) at %.1f C", SensorCatalog.smcZoneName(zone), key, target))
+        }
         for (key, value) in temperatures.sorted(by: { $0.1 > $1.1 }).prefix(10) {
             let info = SensorCatalog.info(for: key)
             let name = info.name.padding(toLength: min(24, max(info.name.count, 24)), withPad: " ", startingAt: 0)
