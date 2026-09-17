@@ -167,11 +167,16 @@ if CommandLine.arguments.contains("--probe") {
         let hardware = FanHardware(smc: smc)
         print("fans: \(hardware.fans.count)")
         for fan in hardware.fans {
-            print(String(format: "  fan %d: %.0f rpm (limits %.0f-%.0f, forced=%@)",
+            // The raw mode key, not `isOwned`: ownership is this process's own record
+            // of what it took, and a probe has taken nothing, so it always said "no"
+            // however hard the daemon beside it was holding the fan. What the SMC has
+            // in F<n>Md is the thing worth seeing from outside.
+            print(String(format: "  fan %d: %.0f rpm, target %.0f (limits %.0f-%.0f, F%dMd=%.0f)",
                          fan.index,
                          hardware.actualRPM(fan.index) ?? 0,
+                         hardware.targetRPM(fan.index) ?? 0,
                          fan.limits.minRPM, fan.limits.maxRPM,
-                         hardware.isOwned(fan.index) ? "yes" : "no"))
+                         fan.index, hardware.rawMode(fan.index) ?? -1))
         }
         let temperatures = smc.temperatureReadings().map { ($0.key, $0.value) }
         SensorCatalog.configure(temperatures.map { SensorReading(key: $0.0, value: $0.1) })

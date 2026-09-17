@@ -8,12 +8,18 @@ final class SMCDevice {
         case cannotOpen
         case notPrivileged
         case unwritable(String)
+        /// The SMC took the write, returned success, and kept its own value. Not the
+        /// same as a refusal: nothing went wrong that the write itself could report,
+        /// and only reading the key back afterwards shows it.
+        case ignored(key: String, asked: Double, kept: Double)
 
         var description: String {
             switch self {
             case .cannotOpen: return "cannot open AppleSMC"
             case .notPrivileged: return "SMC write refused: run as root"
             case .unwritable(let key): return "SMC key \(key) refused the write"
+            case .ignored(let key, let asked, let kept):
+                return String(format: "SMC accepted %@ = %.0f and kept %.0f", key, asked, kept)
             }
         }
     }

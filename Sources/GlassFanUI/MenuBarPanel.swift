@@ -71,7 +71,7 @@ struct MenuBarPanel: View {
             ForEach(client.snapshot?.fans ?? []) { fan in
                 HStack(spacing: 11) {
                     FanDial(rpm: fan.actualRPM, limits: fan.limits, controlled: fan.forced,
-                            alert: fan.emergency || fan.writeError != nil,
+                            alert: fan.alerting,
                             size: 40, showsCaption: false, showsValue: false)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(L10n.t("Вент. \(fan.index + 1)", "Fan \(fan.index + 1)"))

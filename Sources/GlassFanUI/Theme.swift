@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import FanKit
 
 extension NSColor {
     convenience init(hex: String) {
@@ -111,5 +112,35 @@ enum Format {
     static func rpm(_ value: Double?) -> String {
         guard let value else { return "—" }
         return String(format: "%.0f", value)
+    }
+}
+
+extension FanReading {
+    /// What to call a fan the daemon could not hold. `nil` when it is holding it.
+    ///
+    /// Two different failures, and the difference matters to whoever is reading:
+    /// a refused write is something to fix (install the helper, run it as root),
+    /// while a discarded one is the system having taken the fans back and nothing
+    /// the user did wrong.
+    var failureCaption: String? {
+        switch writeFailure ?? (writeError != nil ? .refused : nil) {
+        case .refused: return L10n.t("запись отклонена", "write refused")
+        case .ignored: return L10n.t("система забрала", "system took over")
+        case nil:      return nil
+        }
+    }
+
+    /// Worth colouring red: the fan is in trouble or not doing what it was told.
+    /// A stored-away expression rather than three copies inline, which also keeps
+    /// the type-checker from timing out inside a SwiftUI body.
+    var alerting: Bool { emergency || failureCaption != nil }
+
+    /// The longer form, for the line under the fan.
+    var failureSubtitle: String? {
+        switch writeFailure ?? (writeError != nil ? .refused : nil) {
+        case .refused: return L10n.t("настройка не применилась", "the setting did not take")
+        case .ignored: return L10n.t("система вернула вентилятор себе", "the system took the fan back")
+        case nil:      return nil
+        }
     }
 }

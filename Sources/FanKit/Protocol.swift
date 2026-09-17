@@ -11,6 +11,18 @@ public struct SensorReading: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// Why a fan is not being held when the settings say it should be.
+///
+/// Two different things that look the same from the interface and are not: one is a
+/// write that never happened, the other a write that happened and changed nothing.
+public enum FanWriteFailure: String, Codable, Sendable {
+    /// The SMC would not take the write. Almost always: not running as root.
+    case refused
+    /// The SMC took it, reported success, and kept its own value. Seen on an M3 Pro
+    /// whose fans went back to the system a couple of minutes after being pinned.
+    case ignored
+}
+
 public struct FanReading: Codable, Equatable, Sendable, Identifiable {
     public var index: Int
     public var actualRPM: Double
@@ -22,13 +34,16 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
     /// Temperature currently steering the curve, when there is one.
     public var drivingTemp: Double?
     public var emergency: Bool
-    /// Set when the last write to this fan was refused, so the UI can say so instead
-    /// of claiming control it does not have.
+    /// Set when the last write to this fan did not take, so the UI can say so instead
+    /// of claiming control it does not have. The text is for the log and the tooltip;
+    /// `writeFailure` is what the interface should read.
     public var writeError: String?
+    /// Absent from a daemon older than this field; `writeError` is then all there is.
+    public var writeFailure: FanWriteFailure?
 
     public init(index: Int, actualRPM: Double, targetRPM: Double, limits: FanLimits,
                 mode: FanMode, forced: Bool, drivingTemp: Double?, emergency: Bool,
-                writeError: String? = nil) {
+                writeError: String? = nil, writeFailure: FanWriteFailure? = nil) {
         self.index = index
         self.actualRPM = actualRPM
         self.targetRPM = targetRPM
@@ -38,6 +53,7 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
         self.drivingTemp = drivingTemp
         self.emergency = emergency
         self.writeError = writeError
+        self.writeFailure = writeFailure
     }
 
     public var id: Int { index }

@@ -106,3 +106,51 @@ struct GlassStyleTests {
         #expect(GlassStyle.toneOpacity(9) == GlassStyle.toneOpacity(1))
     }
 }
+
+import FanKit
+
+/// A fan the daemon could not hold has to say which of the two things went wrong.
+/// They look the same from a distance and mean opposite things to whoever reads
+/// them: one is something to go and fix, the other is the machine overruling us.
+@Suite("Fan failure wording")
+struct FanFailureWordingTests {
+    private func reading(_ failure: FanWriteFailure?, error: String?) -> FanReading {
+        FanReading(index: 0, actualRPM: 0, targetRPM: 0,
+                   limits: FanLimits(minRPM: 1350, maxRPM: 5349),
+                   mode: .fixed, forced: false, drivingTemp: nil, emergency: false,
+                   writeError: error, writeFailure: failure)
+    }
+
+    @Test("a held fan says nothing")
+    func silenceWhenHolding() {
+        let held = reading(nil, error: nil)
+        #expect(held.failureCaption == nil)
+        #expect(held.failureSubtitle == nil)
+        #expect(!held.alerting)
+    }
+
+    @Test("a refusal and a discarded write read differently")
+    func theTwoFailuresDiffer() {
+        let refused = reading(.refused, error: "…")
+        let ignored = reading(.ignored, error: "…")
+        #expect(refused.failureCaption != ignored.failureCaption)
+        #expect(refused.failureSubtitle != ignored.failureSubtitle)
+        #expect(refused.alerting && ignored.alerting)
+    }
+
+    @Test("a daemon too old to say which one is taken at its word about the fact")
+    func olderDaemonStillSaysSomething() {
+        let old = reading(nil, error: "SMC key F0Tg refused the write")
+        #expect(old.failureCaption == reading(.refused, error: "…").failureCaption)
+        #expect(old.alerting)
+    }
+
+    @Test("an emergency colours the fan even while the daemon is holding it")
+    func emergencyAlerts() {
+        let emergency = FanReading(index: 0, actualRPM: 5349, targetRPM: 5349,
+                                   limits: FanLimits(minRPM: 1350, maxRPM: 5349),
+                                   mode: .curve, forced: true, drivingTemp: 99, emergency: true)
+        #expect(emergency.alerting)
+        #expect(emergency.failureCaption == nil)
+    }
+}

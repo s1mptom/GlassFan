@@ -83,3 +83,49 @@ struct ProtocolTests {
         }
     }
 }
+
+/// A daemon and an app are installed together but do not have to be restarted
+/// together, so every field added to the wire has to survive meeting the other side
+/// of its own age.
+@Suite("Wire protocol across versions")
+struct ProtocolCompatibilityTests {
+
+    @Test("a snapshot from a daemon that knows nothing of the new fields still decodes")
+    func olderDaemonStillDecodes() throws {
+        // Exactly what 0.1.1 put on the wire: no setpoints, no engines, and a fan
+        // reading whose failure is a string and nothing more.
+        let json = """
+        {"snapshot":{"_0":{"time":1700000000,"sensors":[{"key":"TCMz","value":73.8}],\
+        "fans":[{"index":0,"actualRPM":0,"targetRPM":5349,"limits":{"minRPM":1350,"maxRPM":5349},\
+        "mode":"fixed","forced":true,"emergency":false,"writeError":"SMC key F0Tg refused the write"}],\
+        "config":{"emergencyTemp":95,"pollInterval":1,"trackedSensors":[],"fans":[]},\
+        "daemonVersion":"0.1.1"}}}
+        """
+        var buffer = NDJSONDecoderBuffer()
+        let decoded = try buffer.append(Data((json + "\n").utf8), as: DaemonMessage.self)
+        guard case .snapshot(let snapshot) = decoded.first else {
+            Issue.record("not a snapshot"); return
+        }
+        #expect(snapshot.smcZoneTargets == nil)
+        #expect(snapshot.sensorEngines == nil)
+        #expect(snapshot.fans[0].writeFailure == nil)
+        #expect(snapshot.fans[0].writeError != nil)
+    }
+
+    @Test("the two ways a fan write can fail are told apart on the wire")
+    func failureKindSurvives() throws {
+        for failure in [FanWriteFailure.refused, .ignored] {
+            let reading = FanReading(index: 0, actualRPM: 0, targetRPM: 0,
+                                     limits: FanLimits(minRPM: 1350, maxRPM: 5349),
+                                     mode: .fixed, forced: false, drivingTemp: nil,
+                                     emergency: false, writeError: "…", writeFailure: failure)
+            let data = try NDJSONEncoder.encode(DaemonMessage.snapshot(
+                Snapshot(time: 0, sensors: [], fans: [reading], config: .default(fanCount: 1),
+                         daemonVersion: "test")))
+            var buffer = NDJSONDecoderBuffer()
+            guard case .snapshot(let snapshot)? = try buffer.append(data, as: DaemonMessage.self).first
+            else { Issue.record("not a snapshot"); return }
+            #expect(snapshot.fans[0].writeFailure == failure)
+        }
+    }
+}
