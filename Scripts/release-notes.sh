@@ -10,7 +10,7 @@ cat <<EOF
 
 **[GlassFan-$VERSION.dmg](https://github.com/s1mptom/GlassFan/releases/download/v$VERSION/GlassFan-$VERSION.dmg)** — open it and drag GlassFan to Applications.
 
-Requires **macOS 26 or newer on Apple silicon**. Built and tested on a MacBook Pro with M1 Max; the M1 Pro MacBook Pros share its layout. On a MacBook Air (no fan) it shows temperatures only.
+Requires **macOS 26 or newer on Apple silicon**. Measured on a MacBook Pro with M1 Max and one with M3 Pro; the M1 Pro MacBook Pros share the M1 Max's layout. On any other chip the sensors are named from the machine's own key layout rather than from a table. On a MacBook Air (no fan) it shows temperatures only.
 
 To control the fans, open **Settings → Fan control → Install**. macOS asks for your password once; the helper then starts with the system.
 EOF
