@@ -12,12 +12,19 @@ final class SMCDevice {
         /// same as a refusal: nothing went wrong that the write itself could report,
         /// and only reading the key back afterwards shows it.
         case ignored(key: String, asked: Double, kept: Double)
+        /// The IOKit call went through and the controller itself said no, in its own
+        /// status byte. 0x82 is what Apple silicon answers for a fan key it is holding.
+        case rejected(key: String, status: Int32)
 
         var description: String {
             switch self {
             case .cannotOpen: return "cannot open AppleSMC"
             case .notPrivileged: return "SMC write refused: run as root"
             case .unwritable(let key): return "SMC key \(key) refused the write"
+            case .rejected(let key, let status):
+                let meaning = status == 0x82 ? " (the SMC is holding this key)"
+                            : status == 0x84 ? " (no such key)" : ""
+                return String(format: "SMC refused %@ with status 0x%02x%@", key, status, meaning)
             case .ignored(let key, let asked, let kept):
                 return String(format: "SMC accepted %@ = %.0f and kept %.0f", key, asked, kept)
             }
@@ -57,6 +64,7 @@ final class SMCDevice {
             smc_write(smc_key_from_string(key), ptr.baseAddress, UInt32(bytes.count))
         }
         if result == SMC_ERR_NOT_PRIVILEGED { throw Failure.notPrivileged }
+        if result == SMC_ERR_REJECTED { throw Failure.rejected(key: key, status: smc_last_status()) }
         guard result == SMC_OK else { throw Failure.unwritable(key) }
     }
 

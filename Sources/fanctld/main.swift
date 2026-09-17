@@ -1,6 +1,27 @@
 import Foundation
 import FanKit
 
+/// Signal sources for the hardware experiments below, and the flag they raise.
+///
+/// At the top of the file because top-level `var`s in main.swift are initialised in
+/// the order the file executes, not the order it reads: one of these declared below
+/// its first use is not an empty array, it is uninitialised memory, and appending to
+/// it crashes. The queue is its own because the experiments spend their time asleep
+/// on the main thread, where a source scheduled on the main queue would never fire.
+var minimumTestSignals: [DispatchSourceSignal] = []
+let minimumTestSignalQueue = DispatchQueue(label: "glassfan.experiments.signals")
+
+/// A flag one thread raises and another reads. Small enough to hand-roll, and the
+/// alternative - a plain Bool across two threads - is the kind of race that works
+/// every time it is tried and fails the once it matters.
+final class ManagedAtomicFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func raise() { lock.lock(); value = true; lock.unlock() }
+    var isRaised: Bool { lock.lock(); defer { lock.unlock() }; return value }
+}
+
+
 // A probe mode that needs no root, so the hardware can be inspected before installing.
 /// Hardware experiment: what does the SMC do with a target below F?Mn? Writes a
 /// descending set of targets to each fan, reads back the actual rpm and what the
@@ -157,6 +178,418 @@ if let index = CommandLine.arguments.firstIndex(of: "--learn") {
         exit(0)
     } catch {
         print("learn failed: \(error)")
+        exit(1)
+    }
+}
+
+/// Puts the machine's own thermal management back, whatever left it switched off.
+///
+/// `Ftst` raised is the Mac cooling itself by nobody's rules. The daemon clears it on
+/// every path it controls, but a process killed outright controls no paths, so there
+/// has to be a way to say "give it back" that does not depend on the thing that took
+/// it still being alive.
+if CommandLine.arguments.contains("--clear-lock") {
+    guard getuid() == 0 else { print("--clear-lock needs root"); exit(1) }
+    do {
+        let smc = try SMCDevice()
+        let count = Int(smc.read("FNum")?.value ?? 0)
+        for index in 0..<count {
+            if let mode = smc.read("F\(index)Md")?.value, mode == 1 {
+                try? smc.write("F\(index)Md", value: 0)
+                print("fan \(index): manual mode dropped")
+            }
+        }
+        if let test = smc.read("Ftst")?.value {
+            if test != 0 {
+                try? smc.write("Ftst", value: 0)
+                print(String(format: "Ftst was %.0f, now %.0f", test, smc.read("Ftst")?.value ?? -1))
+            } else {
+                print("Ftst is already 0: the system has its thermal management")
+            }
+        } else {
+            print("no Ftst key on this Mac; nothing to clear")
+        }
+        exit(0)
+    } catch {
+        print("clear-lock failed: \(error)")
+        exit(1)
+    }
+}
+
+/// Hardware experiment: the documented way past thermalmonitord on M3 and later.
+///
+///     fanctld --unlock-test [rpm] [seconds]
+///
+/// On an M1, writing 1 into `F<n>Md` takes the fan and that is the end of it. From the
+/// M3 on, thermalmonitord holds the fans in mode 3 and the firmware answers a
+/// manual-mode write with status 0x82. The sequence that reportedly gets past it, from
+/// agoodkind/macos-smc-fan, which had it out of thermalmonitord and AppleSMC.kext:
+/// ask for manual mode; if refused, write 1 into `Ftst`, give the thermal manager a
+/// few seconds to let go, and keep asking.
+///
+/// Everything is put back on the way out - mode to 0, `Ftst` to 0 - because `Ftst`
+/// left at 1 is the machine's own thermal management left switched off.
+if CommandLine.arguments.contains("--unlock-test") {
+    let arguments = CommandLine.arguments.drop { $0 != "--unlock-test" }.dropFirst()
+    let wanted = Double(arguments.first ?? "") ?? 3000
+    let seconds = Int(arguments.dropFirst().first ?? "") ?? 25
+    guard getuid() == 0 else { print("--unlock-test needs root"); exit(1) }
+    do {
+        let smc = try SMCDevice()
+        let hasFtst = smc.read("Ftst") != nil
+        print(String(format: "before: F0Md %.0f, F0Tg %.0f, fan0 %.0f rpm, Ftst %@",
+                     smc.read("F0Md")?.value ?? -1, smc.read("F0Tg")?.value ?? -1,
+                     smc.read("F0Ac")?.value ?? -1,
+                     hasFtst ? String(format: "%.0f", smc.read("Ftst")?.value ?? -1) : "absent"))
+
+        let restoreLock = NSLock()
+        var alreadyRestored = false
+        func restore() {
+            restoreLock.lock()
+            defer { restoreLock.unlock() }
+            guard !alreadyRestored else { return }
+            alreadyRestored = true
+            try? smc.write("F0Md", value: 0)
+            if hasFtst { try? smc.write("Ftst", value: 0) }
+            print(String(format: "restored: F0Md %.0f, Ftst %@, fan0 %.0f rpm",
+                         smc.read("F0Md")?.value ?? -1,
+                         hasFtst ? String(format: "%.0f", smc.read("Ftst")?.value ?? -1) : "absent",
+                         smc.read("F0Ac")?.value ?? -1))
+            fflush(stdout)
+        }
+        func finish(_ code: Int32) -> Never { restore(); exit(code) }
+
+        let stop = ManagedAtomicFlag()
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: minimumTestSignalQueue)
+            source.setEventHandler { stop.raise() }
+            source.resume()
+            minimumTestSignals.append(source)
+        }
+
+        /// Manual mode taken, or not. Reports what the firmware said rather than
+        /// whether the call returned, which is the distinction this whole thing turns on.
+        func takeManualMode() -> Bool {
+            do {
+                try smc.write("F0Md", value: 1)
+                return (smc.read("F0Md")?.value ?? -1) == 1
+            } catch {
+                print("  F0Md = 1 refused: \(error)")
+                return false
+            }
+        }
+
+        print("asking for manual mode the plain way")
+        var taken = takeManualMode()
+        if !taken {
+            guard hasFtst else {
+                print("no Ftst key on this Mac, so there is nothing else to try")
+                finish(0)
+            }
+            print("writing Ftst = 1 and waiting for the thermal manager to let go")
+            do { try smc.write("Ftst", value: 1) }
+            catch { print("  Ftst = 1 refused: \(error)"); finish(0) }
+            print(String(format: "  Ftst now reads %.0f", smc.read("Ftst")?.value ?? -1))
+            for attempt in 1...300 {
+                if stop.isRaised { print("interrupted"); finish(1) }
+                Thread.sleep(forTimeInterval: 0.1)
+                if takeManualMode() { print("  manual mode taken after \(attempt) tries"); taken = true; break }
+                if attempt % 50 == 0 { print("  still trying (\(attempt))"); fflush(stdout) }
+            }
+        }
+        guard taken else {
+            print("manual mode never taken - the SMC held on through the whole sequence")
+            finish(0)
+        }
+
+        print(String(format: "manual mode is ours. Asking for %.0f rpm", wanted))
+        do { try smc.write("F0Tg", value: wanted) }
+        catch { print("  F0Tg refused: \(error)"); finish(0) }
+        for second in 1...seconds {
+            Thread.sleep(forTimeInterval: 1)
+            if stop.isRaised { print("interrupted"); finish(1) }
+            print(String(format: "  t+%2ds  fan0 %.0f rpm   F0Tg %.0f   F0Md %.0f   TCDX %.1f",
+                         second, smc.read("F0Ac")?.value ?? -1, smc.read("F0Tg")?.value ?? -1,
+                         smc.read("F0Md")?.value ?? -1, smc.read("TCDX")?.value ?? -1))
+            fflush(stdout)
+        }
+        finish(0)
+    } catch {
+        print("unlock-test failed: \(error)")
+        exit(1)
+    }
+}
+
+/// Hardware experiment: does this SMC key take a value, and what happens if it does?
+///
+///     fanctld --write-test <key> <value> [seconds]
+///
+/// Reads the key, writes the value, reads it back, watches the fans for a while and
+/// puts the original back on every way out. The same harness `--minimum-test` uses,
+/// pointed wherever the next question is.
+///
+/// Answering "is it writable" needs the read-back, not the write: on this hardware a
+/// write to a key the SMC has its own opinion about returns success and changes
+/// nothing. `F0Tg` and `F0Mn` both do it.
+///
+/// Restricted to the keys these experiments are about. A root process that will write
+/// any four characters it is handed into the controller that runs the fans and the
+/// charger is not a diagnostic, it is a loaded gun, and the list costs one line.
+let writeTestAllowed: Set<String> = [
+    "F0Mn", "F1Mn", "F0Mx", "F1Mx", "F0Tg", "F1Tg", "F0Md", "F1Md",
+    "Tf16", "Tf26",   // the SMC's own setpoints, the one lever left worth trying
+]
+
+if let index = CommandLine.arguments.firstIndex(of: "--write-test") {
+    let arguments = CommandLine.arguments.dropFirst(index + 1)
+    guard let key = arguments.first, let value = Double(arguments.dropFirst().first ?? "") else {
+        print("usage: fanctld --write-test <key> <value> [seconds]")
+        exit(1)
+    }
+    let seconds = Int(arguments.dropFirst(2).first ?? "") ?? 20
+    // The key is checked before the privileges are, so a typo is caught by anyone
+    // running this rather than only by whoever remembered to put sudo in front.
+    guard writeTestAllowed.contains(key) else {
+        print("\(key) is not one of the keys this is allowed to write: "
+              + writeTestAllowed.sorted().joined(separator: ", "))
+        exit(1)
+    }
+    guard getuid() == 0 else { print("--write-test needs root"); exit(1) }
+    do {
+        let smc = try SMCDevice()
+        guard let original = smc.read(key)?.value else {
+            print("\(key) is not readable on this Mac")
+            exit(1)
+        }
+        // A setpoint is the temperature the machine cools itself to. Lowering one asks
+        // for more cooling and is the safe direction; raising one asks the Mac to run
+        // hotter than Apple decided it should, which is not a thing to find out by
+        // accident at three in the afternoon.
+        if key.hasPrefix("Tf"), value > original {
+            print(String(format: "refusing to raise a thermal setpoint: %@ is %.1f and you asked for %.1f",
+                         key, original, value))
+            exit(1)
+        }
+        print(String(format: "%@ is %.2f; writing %.2f", key, original, value))
+
+        let restoreLock = NSLock()
+        var alreadyRestored = false
+        func restore() {
+            restoreLock.lock()
+            defer { restoreLock.unlock() }
+            guard !alreadyRestored else { return }
+            alreadyRestored = true
+            try? smc.write(key, value: original)
+            let back = smc.read(key)?.value ?? -1
+            if abs(back - original) <= 0.5 {
+                print(String(format: "restored: %@ is %.2f again", key, back))
+            } else {
+                print(String(format: "!! %@ is %.2f and should be %.2f - set it back by hand",
+                             key, back, original))
+            }
+            fflush(stdout)
+        }
+        func finish(_ code: Int32) -> Never { restore(); exit(code) }
+
+        let stop = ManagedAtomicFlag()
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: minimumTestSignalQueue)
+            source.setEventHandler { stop.raise() }
+            source.resume()
+            minimumTestSignals.append(source)
+        }
+
+        do { try smc.write(key, value: value) }
+        catch { print("refused outright: \(error)"); finish(0) }
+
+        let kept = smc.read(key)?.value ?? -1
+        guard abs(kept - value) <= 0.5 else {
+            print(String(format: "the SMC kept %.2f: %@ is not writable", kept, key))
+            finish(0)
+        }
+        print("the SMC kept it. Watching:")
+        for second in 1...seconds {
+            Thread.sleep(forTimeInterval: 1)
+            if stop.isRaised { print("interrupted"); finish(1) }
+            print(String(format: "  t+%2ds  fan0 %.0f rpm  fan1 %.0f rpm  F0Tg %.0f  F0Md %.0f  TCDX %.1f  %@ %.2f",
+                         second,
+                         smc.read("F0Ac")?.value ?? -1, smc.read("F1Ac")?.value ?? -1,
+                         smc.read("F0Tg")?.value ?? -1, smc.read("F0Md")?.value ?? -1,
+                         smc.read("TCDX")?.value ?? -1,
+                         key, smc.read(key)?.value ?? -1))
+            fflush(stdout)
+        }
+        finish(0)
+    } catch {
+        print("write-test failed: \(error)")
+        exit(1)
+    }
+}
+
+/// Hardware experiment: is the fan's *minimum* a way in where its target is not?
+///
+/// On an M3 Pro the SMC discards whatever goes into `F0Tg` and keeps its own demand -
+/// zero when it wants the fan stopped, `F0Mn` when it wants it idling. So the question
+/// is whether `F0Mn` itself can be moved. If it can, the SMC's own floor rises, and the
+/// SMC's value is the one that always wins.
+///
+/// Raises fan 0's minimum, watches, and puts it back. One fan, because one is enough to
+/// learn the answer and half the noise.
+///
+/// Restoring is the part that has to work, so it is done by hand on every way out
+/// rather than by `defer`: this block leaves through `exit`, and `exit` does not run
+/// deferred code. A `defer { restore() }` here read as a safety net and was not one -
+/// on the path that actually writes to the key, it would never have fired.
+///
+if CommandLine.arguments.contains("--minimum-test") {
+    guard getuid() == 0 else {
+        print("--minimum-test needs root: sudo fanctld --minimum-test")
+        exit(1)
+    }
+    do {
+        let smc = try SMCDevice()
+        guard let original = smc.read("F0Mn")?.value else {
+            print("F0Mn is not readable on this Mac; nothing to test")
+            exit(1)
+        }
+        print(String(format: "F0Mn is %.0f, F0Tg %.0f, fan 0 at %.0f rpm",
+                     original, smc.read("F0Tg")?.value ?? -1, smc.read("F0Ac")?.value ?? -1))
+
+        // Wired up before anything is written, and idempotent, because the signal
+        // handler and the ordinary path can both reach it.
+        let restored = NSLock()
+        var alreadyRestored = false
+        func restore() {
+            restored.lock()
+            defer { restored.unlock() }
+            guard !alreadyRestored else { return }
+            alreadyRestored = true
+            try? smc.write("F0Mn", value: original)
+            let back = smc.read("F0Mn")?.value ?? -1
+            if abs(back - original) <= 1 {
+                print(String(format: "restored: F0Mn is %.0f again", back))
+            } else {
+                print(String(format: "!! F0Mn is %.0f and should be %.0f - set it back by hand", back, original))
+            }
+            fflush(stdout)
+        }
+        func finish(_ code: Int32) -> Never {
+            restore()
+            exit(code)
+        }
+        // The handler only raises a flag. Restoring from its own thread would have it
+        // writing to the SMC while this one is part-way through a read of it, and
+        // nothing below here serialises the two. The wait costs at most the second
+        // the main thread is asleep for.
+        let interrupted = ManagedAtomicFlag()
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: minimumTestSignalQueue)
+            source.setEventHandler { interrupted.raise() }
+            source.resume()
+            minimumTestSignals.append(source)
+        }
+
+        // A fan somebody else is already forcing tells us nothing: its speed is theirs,
+        // not the SMC's answer to a raised floor. Better to say so than to hand back a
+        // reading that cannot be interpreted.
+        if let mode = smc.read("F0Md")?.value, mode == 1 {
+            print("F0Md is 1: something is holding fan 0 already (the daemon, in Fixed or Curve).")
+            print("Set both fans to System in GlassFan and run this again.")
+            finish(0)
+        }
+
+        // With --wait, sit until the SMC is spinning the fan of its own accord.
+        //
+        // Worth the wait because of what the first run of this test could not tell
+        // apart. It wrote to F0Mn while the fan was stopped, and the SMC kept its own
+        // 1350 - but in that state the SMC keeps its own value for *every* key, the
+        // target included, so "the minimum is not writable" and "nothing is writable
+        // right now" look identical. The answer only means something asked inside the
+        // window where the SMC does accept a write.
+        //
+        // And if the floor does stick there, it is the whole game: a minimum the SMC
+        // carries with it as the machine cools is a minimum it cannot drop to zero
+        // under.
+        if CommandLine.arguments.contains("--wait") {
+            print("waiting for the SMC to spin the fan on its own (F0Md 0, rpm above zero)")
+            var waited = 0
+            while true {
+                let mode = smc.read("F0Md")?.value ?? -1
+                let rpm = smc.read("F0Ac")?.value ?? 0
+                if mode == 0, rpm > 0 {
+                    print(String(format: "  window open after %d:%02d - fan 0 at %.0f rpm, F0Md %.0f",
+                                 waited / 60, waited % 60, rpm, mode))
+                    break
+                }
+                if interrupted.isRaised { print("interrupted while waiting"); finish(1) }
+                if waited % 60 == 0 {
+                    print(String(format: "  %d:%02d   %.0f rpm   F0Md %.0f   TCDX %.1f",
+                                 waited / 60, waited % 60, rpm, mode,
+                                 smc.read("TCDX")?.value ?? -1))
+                    fflush(stdout)
+                }
+                Thread.sleep(forTimeInterval: 2)
+                waited += 2
+            }
+        }
+
+        // If F0Mx cannot be read the ceiling falls back to the original, and writing
+        // the original back is a test that proves nothing while looking like it passed.
+        guard let ceiling = smc.read("F0Mx")?.value, ceiling > original + 100 else {
+            print("F0Mx is not readable, or leaves no room above the minimum; nothing to test")
+            finish(0)
+        }
+        let raised = min(original + 1150, ceiling)
+        print(String(format: "writing F0Mn = %.0f", raised))
+        do {
+            try smc.write("F0Mn", value: raised)
+        } catch {
+            print("F0Mn refused the write outright: \(error)")
+            finish(0)
+        }
+        let kept = smc.read("F0Mn")?.value ?? -1
+        if abs(kept - raised) > 1 {
+            print(String(format: "the SMC kept %.0f: the minimum is not writable either", kept))
+            finish(0)
+        }
+        print("the SMC kept it. Watching what the fan does:")
+        for second in 1...15 {
+            Thread.sleep(forTimeInterval: 1)
+            if interrupted.isRaised { print("interrupted"); finish(1) }
+            print(String(format: "  t+%2ds  %.0f rpm   F0Tg %.0f   F0Md %.0f",
+                         second, smc.read("F0Ac")?.value ?? -1,
+                         smc.read("F0Tg")?.value ?? -1, smc.read("F0Md")?.value ?? -1))
+            fflush(stdout)
+        }
+        finish(0)
+    } catch {
+        print("minimum-test failed: \(error)")
+        exit(1)
+    }
+}
+
+/// Every key the SMC has for the fans, with its type, size and current value.
+///
+/// Read-only. `F0Tg` and `F0Md` are the two this daemon writes, and on a chip that
+/// discards those writes the question is what else is there - so this lists all of
+/// them rather than the ones we already know about.
+if CommandLine.arguments.contains("--dump-fan-keys") {
+    do {
+        let smc = try SMCDevice()
+        print("key   type  size  value")
+        for key in smc.allKeys().filter({ $0.hasPrefix("F") }).sorted() {
+            guard let raw = smc.readRaw(key) else { print("\(key)  (unreadable)"); continue }
+            let decoded = SMCValue.decode(type: raw.type, bytes: raw.bytes)
+                .map { String(format: "%.2f", $0) } ?? "—"
+            let hex = raw.bytes.map { String(format: "%02x", $0) }.joined(separator: " ")
+            print("\(key)  \(raw.type)  \(raw.bytes.count)     \(decoded)   [\(hex)]")
+        }
+        exit(0)
+    } catch {
+        print("dump failed: \(error)")
         exit(1)
     }
 }

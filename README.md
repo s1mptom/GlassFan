@@ -80,7 +80,7 @@ supported.
 | Mac | Status |
 |---|---|
 | MacBook Pro 14"/16", **M1 Pro** or **M1 Max** (2021) | Supported. Built and tested on an M1 Max (MacBookPro18,2); the M1 Pro models share its SMC layout, fan keys and sensor map. |
-| MacBook Pro 14"/16", **M3 Pro** (2023) | Supported. Measured on a Mac15,7 (16", 6+6 cores): 220 usable sensors, none unnamed, from a table of its own plus the key layout. |
+| MacBook Pro 14"/16", **M3 Pro** (2023) | Supported. Measured on a Mac15,7 (16", 6+6 cores): 220 usable sensors, none unnamed. Fan control needs the `Ftst` unlock, which this does automatically — it takes a few seconds to engage. |
 | Mac Studio, **M1 Max / M1 Ultra** | Should work: same chip family and sensor map. Not tested. |
 | Apple silicon Macs, **other M2/M3/M4 chips** | Fan control uses the SMC's standard fan keys, read from the machine itself. Sensors are all shown and named from the layout of the machine's own keys — cores, GPU clusters and heatsinks read as such, numbered rather than labelled. Not tested. |
 | **MacBook Air** (no fan) | Temperature monitoring only — the app says the Mac is cooled passively. |
@@ -282,13 +282,23 @@ not assumed:
   use for named Apple silicon sensors works unprivileged here but reports only
   `PMU tdie*`, `PMU tdev*`, `gas gauge battery` and `NAND CH0 temp` — no per-core
   names. It is not a shortcut to a sensor map.
-- **A successful SMC write does not mean the SMC kept the value.** With both fans
-  pinned to a fixed maximum, `F0Md` sat at 3 and `F0Tg` at 0 while the daemon wrote
-  1 and 5349 into them every second — every write returning `SMC_OK`, and the fans
-  stopped. The fans do hold at first and are taken back a couple of minutes later.
-  Targets are read back now, and a fan the SMC quietly took over reads
-  "system took over" rather than "fixed, 5349 rpm". Why it takes them back is not
-  yet known.
+- **Fan control needs an unlock on this chip, and `SMC_OK` was never the evidence.**
+  `thermalmonitord` holds the fans in mode 3 and the firmware answers a manual-mode
+  write with status `0x82`. That status lives in the SMC's own reply, which this
+  project's C layer did not read — so every refusal looked like a success, and the
+  interface said "fixed, 5349 rpm" over a stopped fan. The status is read now, and
+  targets are read back besides.
+  Raising `Ftst` asks the thermal manager to stand down; it takes 5 to 13 seconds to
+  let go, measured across four runs. After that a manual target holds exactly:
+  3000 rpm asked, 2977–3006 held over a minute. `Ftst` is raised only while a fan is
+  actually being held and dropped the moment none is, because raised it is the Mac's
+  own thermal management switched off. `fanctld --clear-lock` puts it back without
+  needing the daemon that took it.
+  The unlock mechanism is [agoodkind/macos-smc-fan](https://github.com/agoodkind/macos-smc-fan)'s,
+  from decompiling `thermalmonitord` and `AppleSMC.kext`. Some M3 machines reportedly
+  have no `Ftst` key at all; there the behaviour is what it was.
+- **`F0Mn`, `F0Mx` and `Tf16` are read-only.** Writes to them return success and are
+  discarded — they describe the fan and the SMC's setpoint rather than setting them.
 
 Checked on a MacBook Pro 18,2 (M1 Max) on macOS 26/27, not assumed:
 
@@ -312,6 +322,8 @@ swift test                                   # FanKit and interface logic, no ha
 ./.build/debug/fanctld --probe               # read-only hardware dump, no root
 ./.build/debug/fanctld --dump-sensors        # every temperature key with its name
 ./.build/debug/fanctld --learn 600           # which engine each sensor answers to
+./.build/debug/fanctld --dump-fan-keys       # every fan key, type and value
+sudo ./.build/debug/fanctld --clear-lock     # give the thermal management back
 GLASSFAN_SOCKET=/tmp/gf.sock ./.build/debug/fanctld --dev   # unprivileged daemon for UI work
 ```
 

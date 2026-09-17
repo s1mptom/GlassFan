@@ -9,6 +9,10 @@
 #define SMC_ERR_CALL -2
 #define SMC_ERR_SIZE -3
 #define SMC_ERR_NOT_PRIVILEGED -4
+// The IOKit call went through and the SMC itself refused. Its own status byte says
+// why: 0x82 is a key the firmware will not let you write, 0x84 a key that is not
+// there. Ignoring this byte is why a rejected write used to look like a success.
+#define SMC_ERR_REJECTED -5
 
 // Opens the AppleSMC user client. Reads work unprivileged; writes need root.
 int smc_open(void);
@@ -19,6 +23,9 @@ int smc_key_at_index(uint32_t index, uint32_t *out_key);
 // Reads up to 32 bytes. out_size and out_type receive the key's declared size/type code.
 int smc_read(uint32_t key, uint8_t *buf, uint32_t *out_size, uint32_t *out_type);
 int smc_write(uint32_t key, const uint8_t *buf, uint32_t size);
+
+// The SMC's own status byte from the last call. Meaningful after SMC_ERR_REJECTED.
+int smc_last_status(void);
 
 uint32_t smc_key_from_string(const char *s);
 void smc_key_to_string(uint32_t key, char *out5);
