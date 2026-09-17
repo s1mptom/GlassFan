@@ -66,48 +66,119 @@ public struct SensorInfo: Sendable, Equatable, Identifiable, Hashable {
 
 /// Which naming table applies. Core, GPU and memory sensors sit at different keys
 /// on each generation of Apple silicon, so a table read off one generation would
-/// put wrong names on another; outside the families listed here, those sensors
-/// keep generic names rather than borrowed ones.
+/// put wrong names on another; outside the families listed here, those sensors are
+/// named from the layout of the keys themselves rather than from a borrowed table.
+///
+/// The granularity differs on purpose. The M1 table covers a whole family because
+/// both sources describe M1, M1 Pro, M1 Max and M1 Ultra as sharing it. The M3
+/// entry covers the M3 Pro alone: it was measured on one, an M3 Pro has 6+6 cores
+/// where an M3 has 4+4 and an M3 Max 12+4, and nothing here shows that the smaller
+/// and larger dies put their clusters at the same keys. Until one is measured they
+/// take the layout-derived names, which claim nothing a reading cannot back.
 public enum ChipFamily: Sendable, Hashable {
     /// M1, M1 Pro, M1 Max, M1 Ultra.
     case m1
+    /// M3 Pro. Measured on a MacBook Pro Mac15,7; see `m3Pro()`.
+    case m3Pro
     case other
 
-    public static let current: ChipFamily = {
+    public static let current: ChipFamily = from(brand: brandString)
+
+    static var brandString: String {
         var size = 0
-        guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0, size > 0 else { return .other }
+        guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0, size > 0 else { return "" }
         var bytes = [CChar](repeating: 0, count: size)
-        guard sysctlbyname("machdep.cpu.brand_string", &bytes, &size, nil, 0) == 0 else { return .other }
-        let brand = String(cString: bytes)
-        return brand.range(of: #"\bM1\b"#, options: .regularExpression) != nil ? .m1 : .other
+        guard sysctlbyname("machdep.cpu.brand_string", &bytes, &size, nil, 0) == 0 else { return "" }
+        return String(cString: bytes)
+    }
+
+    static func from(brand: String) -> ChipFamily {
+        func has(_ pattern: String) -> Bool {
+            brand.range(of: pattern, options: .regularExpression) != nil
+        }
+        if has(#"\bM1\b"#) { return .m1 }
+        if has(#"\bM3 Pro\b"#) { return .m3Pro }
+        return .other
+    }
+
+    /// How many CPU cores this Mac has, which is the one thing about the chip that
+    /// does not have to be guessed. Used to check a guess rather than make one: see
+    /// `SensorCatalog.discovered(_:engines:cores:)`.
+    public static let physicalCores: Int = {
+        var count: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("hw.physicalcpu", &count, &size, nil, 0) == 0 else { return 0 }
+        return Int(count)
     }()
 }
 
 /// Human names for the SMC's temperature keys.
 ///
 /// Sources, cross-checked against a live M1 Max (MacBookPro18,2, 228 keys):
-/// - Stats (github.com/exelban/stats, Modules/Sensors/values.swift) - the M1
+/// - Stats (github.com/exelban/stats, Modules/Sensors/values.swift, MIT) - the M1
 ///   family's cores, GPU clusters and memory, and several board-level keys.
-/// - iSMC (github.com/dkorunic/iSMC, src/temp.txt) - most of the rest, with notes
-///   on how the keys are laid out.
+/// - iSMC (github.com/dkorunic/iSMC, src/temp.txt, MIT) - most of the rest, with
+///   notes on how the keys are laid out.
+/// - Asahi Linux's macsmc-hwmon (arch/arm64/boot/dts/apple/hwmon-*.dtsi,
+///   GPL-2.0+ OR MIT) - the only labels here from people who reverse-engineered the
+///   SMC protocol itself rather than guessing from readings. A short list: TH0x,
+///   TB0T, TCHP, TW0P and the fan keys. It settled TCHP, which both the prefix and
+///   the other two projects made look like the CPU; see `chargeRegulator`.
 ///
-/// Where the two agree the name is used as is: the M1 family's ten CPU cores
+/// Where the sources agree the name is used as is: the M1 family's ten CPU cores
 /// (2 efficiency, 8 performance) and four GPU clusters are assigned to the same
-/// keys by both. Each core is a triplet of keys - iSMC documents the layout as
-/// probe, probe, max, and on this machine the third reading is the highest of the
-/// three every time - so the core's row shows the max, and the two probes are
+/// keys by both Stats and iSMC. Each core is a triplet of keys - iSMC documents the
+/// layout as probe, probe, max, and on this machine the third reading is the highest
+/// of the three every time - so the core's row shows the max, and the two probes are
 /// listed under "All". Stats takes the middle key instead; the max is what
 /// matters for cooling.
 ///
 /// Where they disagree or only one speaks, the choice is noted beside the key.
+///
+/// What no source has is a chip past the M1 family. Stats' M3 table was checked
+/// against the M3 Pro here and does not describe it: the keys it lists as
+/// performance cores (Tf04, Tf09, Tf44 and the rest) are not on this machine at all,
+/// it has no Tp entries for the generation although this chip's cores are plainly
+/// Tp, and the Tf1 block it calls "GPU 1-4" followed a CPU load and not a GPU one.
+/// Asahi has no M3 support. Hence the layout reader below, and `EngineAffinity`.
+///
+/// Chips with no table of their own are not left with a list of "unnamed": the
+/// keys this machine actually reports are cut into the runs the SMC lays its
+/// parts out in, and each run is named after its place in its prefix. See
+/// `configure(_:)`.
 public enum SensorCatalog {
 
     public static func info(for key: String) -> SensorInfo {
         info(for: key, family: .current)
     }
 
+    /// What this Mac reports, so the parts no table names can still be read off the
+    /// layout. Called by the daemon once it has probed the hardware, and by the app
+    /// whenever a snapshot arrives - the app may well be looking at a machine whose
+    /// sensors it has no table for.
+    ///
+    /// Readings, not just keys: telling where one part's run of keys ends and the
+    /// next begins takes a look at the numbers. Recomputed only when the set of keys
+    /// changes, never on a new reading - so the list is settled once and then holds
+    /// still, and calling this every second costs a set comparison.
+    public static func configure(_ readings: [SensorReading], engines: [String: Engine] = [:]) {
+        let sorted = readings.sorted { $0.key < $1.key }
+        let keys = sorted.map(\.key)
+        tablesLock.lock()
+        guard keys != layout.map(\.key) || engines != engineByKey else { tablesLock.unlock(); return }
+        layout = sorted
+        engineByKey = engines
+        tables.removeAll()
+        tablesLock.unlock()
+
+        cacheLock.lock()
+        cache.removeAll()
+        cacheLock.unlock()
+    }
+
     /// Memoised, because the interface asks this constantly: a couple of hundred
-    /// sensors, on every redraw of the list. The answer for a key never changes.
+    /// sensors, on every redraw of the list. The answer for a key only changes when
+    /// the machine's key list does, and that empties both caches.
     private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var cache: [ChipFamily: [String: SensorInfo]] = [:]
 
@@ -130,14 +201,25 @@ public enum SensorCatalog {
 
     private static let tablesLock = NSLock()
     nonisolated(unsafe) private static var tables: [ChipFamily: [String: SensorInfo]] = [:]
+    /// Set by `configure(_:)`; empty until the hardware has been read.
+    nonisolated(unsafe) private static var layout: [SensorReading] = []
+    /// Also set by `configure(_:)`: what the daemon learned about which engine each
+    /// sensor answers to. Empty until it has watched the machine for a while, and on
+    /// a machine whose engines never ran apart.
+    nonisolated(unsafe) private static var engineByKey: [String: Engine] = [:]
 
     private static func table(for family: ChipFamily) -> [String: SensorInfo] {
         tablesLock.lock()
         defer { tablesLock.unlock() }
         if let built = tables[family] { return built }
-        // The family's table first: its named parts lead their groups, ahead of
-        // the keys every chip shares.
-        let entries = (family == .m1 ? m1() : []) + common()
+        // Precedence, and with it the order of the list. The family's table first: a
+        // name measured on the part beats one inferred from where its key sits. Then
+        // the parts the layout can actually identify, so a core reads as a core and
+        // leads its group. Then the keys every chip shares - sourced names, which
+        // must not be displaced by a numbered run. The layout's leftovers last:
+        // structure without a claim, and the only thing weaker than a shared key.
+        let parts = discovered(layout, engines: engineByKey)
+        let entries = familyTable(family) + parts.named + common() + parts.numbered
         var table: [String: SensorInfo] = [:]
         for (index, entry) in entries.enumerated() where table[entry.key] == nil {
             table[entry.key] = SensorInfo(key: entry.key, group: entry.group,
@@ -148,7 +230,18 @@ public enum SensorCatalog {
         return table
     }
 
-    private struct Entry {
+    private static func familyTable(_ family: ChipFamily) -> [Entry] {
+        switch family {
+        case .m1:    return m1()
+        case .m3Pro: return m3Pro()
+        case .other: return []
+        }
+    }
+
+    /// Internal rather than private so the layout reader can be tested as the pure
+    /// function it is, without `configure(_:)` and the process-wide state
+    /// that goes with it.
+    struct Entry {
         let key: String, group: SensorGroup, ru: String, en: String, essential: Bool
         init(_ key: String, _ group: SensorGroup, _ ru: String, _ en: String, essential: Bool = false) {
             self.key = key; self.group = group; self.ru = ru; self.en = en; self.essential = essential
@@ -157,10 +250,31 @@ public enum SensorCatalog {
 
     /// The SMC's key alphabet, in which the triplets step four characters at a time.
     private static let alphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+    private static let alphabetIndex: [Character: Int] =
+        Dictionary(uniqueKeysWithValues: alphabet.enumerated().map { ($1, $0) })
+
+    /// The key `offset` steps further along, carrying into the character before it.
+    ///
+    /// A run does not stop at the end of the alphabet: the M3 Pro has a triplet at
+    /// Tp0y, Tp0z, **Tp10**. Stepping the last character alone walked off the end of
+    /// a 62-character array there, so the step is done on the whole key.
+    static func advance(_ key: String, by offset: Int) -> String? {
+        guard offset >= 0 else { return nil }
+        var characters = Array(key)
+        var index = characters.count - 1
+        var carry = offset
+        while carry > 0 {
+            guard index >= 0, let position = alphabetIndex[characters[index]] else { return nil }
+            let total = position + carry
+            characters[index] = alphabet[total % alphabet.count]
+            carry = total / alphabet.count
+            index -= 1
+        }
+        return String(characters)
+    }
 
     private static func key(_ prefix: String, _ base: Character, plus offset: Int) -> String {
-        let index = alphabet.firstIndex(of: base)! + offset
-        return prefix + String(alphabet[index])
+        advance(prefix + String(base), by: offset) ?? (prefix + String(base))
     }
 
     /// A max key and its probes, named after the part. Order of entries is the
@@ -174,6 +288,177 @@ public enum SensorCatalog {
         }
         return entries
     }
+
+    // MARK: The layout this machine reports
+
+    /// What a prefix is known to hold on every Apple silicon chip seen so far, and
+    /// how a run under it should read.
+    ///
+    /// Only these five say what the part *is*. Which core sits at which key moves
+    /// with every generation, but that a run of Tp keys is a core, and a run of Tg
+    /// keys a GPU cluster, holds on both the M1 Max and the M3 Pro measured here and
+    /// in both sources. Prefixes whose meaning does move - Ts reads with the SSD on
+    /// an M1 and with the SoC on an M3 Pro - are deliberately absent: they are named
+    /// by their table or not at all.
+    ///
+    /// The die zones are the one that is named without being promoted: the M1 table
+    /// lists Te as plain entries, and a zone of the die is not a part anyone cools.
+    private static let knownPrefixes: [String: (group: SensorGroup, ru: String, en: String, essential: Bool)] = [
+        "Tp": (.cpu, "Ядро CPU", "CPU core", true),
+        "Te": (.cpu, "Кристалл CPU, зона", "CPU die zone", false),
+        "Tg": (.gpu, "GPU, кластер", "GPU cluster", true),
+        "Tm": (.memory, "Память", "Memory", true),
+        "Th": (.cooling, "Радиатор SoC", "SoC heatsink", true),
+    ]
+
+    /// The parts this machine's readings imply, for everything no table names.
+    ///
+    /// The SMC lays a part out as a run of consecutive keys - two or three of them,
+    /// probes first and the reading that leads them last. Cutting the layout into
+    /// those runs recovers the structure without knowing the chip: on the M3 Pro it
+    /// finds 14 CPU cores, 9 GPU clusters, 4 SoC heatsinks and 5 die zones where the
+    /// old code saw 137 sensors called "unnamed".
+    ///
+    /// Split in two because the two halves are worth different things. A run under a
+    /// prefix `knownPrefixes` covers is a part, named and leading its group. A run
+    /// under any other prefix is only structure - it says which readings belong
+    /// together and which of them leads - so it is numbered, never promoted, and
+    /// ranked below the keys every chip shares, whose names came from a source.
+    static func discovered(_ layout: [SensorReading],
+                           engines: [String: Engine] = [:],
+                           cores: Int = ChipFamily.physicalCores) -> (named: [Entry], numbered: [Entry]) {
+        var named: [Entry] = [], numbered: [Entry] = []
+        // Numbered per engine and per prefix, so a part's number stays put as long as
+        // the machine reports the same keys.
+        var engineCounts: [Engine: Int] = [:]
+        let byPrefix = Dictionary(grouping: layout.filter { $0.key.count == 4 && $0.key.hasPrefix("T") }) {
+            String($0.key.prefix(2))
+        }
+        for prefix in byPrefix.keys.sorted() {
+            var known = knownPrefixes[prefix]
+            let found = runs(in: byPrefix[prefix] ?? [])
+            // "Core" is a claim about how many there are, and the machine knows the
+            // answer: hw.physicalcpu. On the M1 Max the Tp runs and the cores agree
+            // exactly, ten and ten. On this M3 Pro there are seventeen runs and
+            // twelve cores - some of them are cluster-level, or belong to parts of
+            // the die this chip does not enable - so they are zones of the CPU here,
+            // which is all the layout can honestly support.
+            if prefix == "Tp", cores > 0, found.count != cores {
+                known = (.cpu, "CPU, зона", "CPU zone", true)
+            }
+            for (index, run) in found.enumerated() {
+                let ru: String, en: String, group: SensorGroup
+                if let known {
+                    let number = index + 1
+                    group = known.group
+                    ru = "\(known.ru) \(number)"
+                    en = "\(known.en) \(number)"
+                } else if let engine = agreedEngine(run, engines) {
+                    // The prefix says nothing, but the machine does: this run heats
+                    // when one engine spends and not when the others do.
+                    let number = (engineCounts[engine] ?? 0) + 1
+                    engineCounts[engine] = number
+                    group = engine.group
+                    ru = "\(engine.name), датчик \(number)"
+                    en = "\(engine.name) sensor \(number)"
+                } else {
+                    group = groupByPrefix(run[0].key)
+                    ru = "Группа \(prefix) \(index + 1)"
+                    en = "\(prefix) group \(index + 1)"
+                }
+                var part = [Entry(run[run.count - 1].key, group, ru, en,
+                                  essential: known?.essential ?? false)]
+                for (probe, reading) in run.dropLast().enumerated() {
+                    part.append(Entry(reading.key, group,
+                                      "\(ru) · зонд \(probe + 1)", "\(en) · probe \(probe + 1)"))
+                }
+                if known != nil { named += part } else { numbered += part }
+            }
+        }
+
+        // Keys with no neighbour to form a part with. A run's structure is worth
+        // more than an engine's name, so these come last and only take a name where
+        // nothing above gave them one.
+        let placed = Set((named + numbered).map(\.key))
+        for reading in layout.sorted(by: { rank($0.key) < rank($1.key) }) {
+            guard !placed.contains(reading.key), let engine = engines[reading.key] else { continue }
+            let number = (engineCounts[engine] ?? 0) + 1
+            engineCounts[engine] = number
+            numbered.append(Entry(reading.key, engine.group,
+                                  "\(engine.name), датчик \(number)", "\(engine.name) sensor \(number)"))
+        }
+        return (named, numbered)
+    }
+
+    /// The engine a whole run answers to, when its keys agree.
+    ///
+    /// All of them, not a majority: the probes of one part sit within a millimetre of
+    /// each other and answer to the same thing, so a run whose keys disagree is a run
+    /// that was cut in the wrong place, and naming it after either answer would be
+    /// dressing up a mistake.
+    private static func agreedEngine(_ run: [SensorReading], _ engines: [String: Engine]) -> Engine? {
+        guard let first = engines[run[0].key] else { return nil }
+        return run.allSatisfy { engines[$0.key] == first } ? first : nil
+    }
+
+    /// The layout cut into parts: keys that step one at a time, broken wherever the
+    /// reading falls.
+    ///
+    /// Adjacency alone is not enough. On the M3 Pro, Te0P through Te0V is seven
+    /// consecutive keys holding three parts, and Tp0R through Tp0W is six holding
+    /// two - cutting those every three characters put a part's coldest probe at its
+    /// head. What marks the seam is the numbers: within a part they climb, probe to
+    /// probe to the reading that leads it, and at a boundary they fall back to the
+    /// next part's first probe. Te0Q reads 58.4 and Te0R 41.6; that is the seam.
+    ///
+    /// The fall has to be a big one. A seam is a drop of six to eighteen degrees -
+    /// Te0Q to Te0R is 17.9, Tp0T to Tp0U is 8.4 - while inside a part the numbers
+    /// do not always climb all the way: two probes of a cool part read identically,
+    /// and the Tp0u and Tp0y parts of this M3 Pro end a degree or two *below* their
+    /// second probe. A threshold of one degree cut those two parts in half and left
+    /// a key stranded; `seam` sits clear of both kinds of movement.
+    ///
+    /// A part is capped at three, the widest either source describes. A key left
+    /// alone by both rules is nobody's probe and is left out.
+    private static let seam = 5.0
+
+    private static func runs(in readings: [SensorReading]) -> [[SensorReading]] {
+        let sorted = readings.sorted { rank($0.key) < rank($1.key) }
+        var result: [[SensorReading]] = []
+        var run: [SensorReading] = []
+        func flush() {
+            if run.count >= 2 { result.append(run) }
+            run.removeAll()
+        }
+        for reading in sorted {
+            if let last = run.last,
+               rank(reading.key) != rank(last.key) + 1   // a gap in the keys
+                || reading.value < last.value - seam     // or the seam between parts
+                || run.count == 3 {                      // or a part already whole
+                flush()
+            }
+            run.append(reading)
+        }
+        flush()
+        return result
+    }
+
+    /// A key as the base-62 number its characters spell, so "next key along" is
+    /// plain arithmetic and Tp0z is followed by Tp10.
+    private static func rank(_ key: String) -> Int {
+        key.reduce(0) { total, character in total * alphabet.count + (alphabetIndex[character] ?? 0) }
+    }
+
+    /// TCHP is not the CPU, on either chip here.
+    ///
+    /// Both the M1 and M3 Pro tables read it as "CPU proximity", which is what the
+    /// two sensor projects imply and what the "TC" prefix suggests. Asahi Linux -
+    /// who reverse-engineered the SMC protocol itself, and whose macsmc-hwmon driver
+    /// labels it in `hwmon-laptop.dtsi` for every Apple silicon laptop they support -
+    /// call it the charge regulator, and the readings here agree: through a load that
+    /// took this M3 Pro's die from 48 to 67 C, TCHP moved between 1 and 4.
+    private static let chargeRegulator =
+        Entry("TCHP", .power, "Регулятор зарядки", "Charge regulator")
 
     /// The M1 family: M1, M1 Pro, M1 Max, M1 Ultra.
     private static func m1() -> [Entry] {
@@ -198,8 +483,8 @@ public enum SensorCatalog {
         e += [Entry("TCDX", .cpu, "CPU, сводный по кристаллу", "CPU die aggregate"),
               Entry("Te00", .cpu, "Кристалл CPU, зона 1", "CPU die zone 1"),
               Entry("Te01", .cpu, "Кристалл CPU, зона 2", "CPU die zone 2"),
-              Entry("Te02", .cpu, "Кристалл CPU, зона 3", "CPU die zone 3"),
-              Entry("TCHP", .cpu, "Возле CPU", "CPU proximity")]
+              Entry("Te02", .cpu, "Кристалл CPU, зона 3", "CPU die zone 3")]
+        e += [chargeRegulator]
 
         // GPU clusters: pairs on "Tg0", probe then the hotter reading.
         for (n, base) in ["4", "C", "K", "S"].enumerated() {
@@ -236,19 +521,118 @@ public enum SensorCatalog {
                          ru: "Плата, группа \(n + 1)", en: "Board group \(n + 1)", essential: false)
         }
 
-        // Ts0P and Ts1P: the Intel MacBook Pros' palm-rest sensors, and on this
-        // M1 Max they read 31-33 C - skin temperature, twenty degrees below the SSD
-        // dies. iSMC lists them as an SSD controller on the M1 family; the readings
-        // do not fit that, so the older name stands, and it is the one inference
-        // in this table rather than a sourced name.
-        e += [Entry("Ts0P", .comfort, "Упор для рук 1", "Palm rest 1", essential: true),
-              Entry("Ts1P", .comfort, "Упор для рук 2", "Palm rest 2", essential: true)]
         return e
     }
+
+    /// The M3 Pro, measured on a MacBook Pro Mac15,7 (6+6 cores, 18-core GPU) under
+    /// macOS 26.6: 228 usable temperature keys, sampled at idle and under load.
+    ///
+    /// Short on purpose. Almost everything this chip reports is a run of keys that
+    /// `discovered(_:)` already reads off the layout - 14 CPU cores, 9 GPU clusters,
+    /// 4 SoC heatsinks - and repeating that here would only add a second place to
+    /// get it wrong. What is here is what the layout cannot say and a measurement
+    /// can. No key is named after a part that was not watched heating.
+    ///
+    /// Notably absent: which cores are the performance ones. One cluster was loaded
+    /// at a time - a single default-QoS thread against a background-QoS one, three
+    /// alternating rounds, each round centred on its own median so the machine's
+    /// other work drifts out - and the die answers as a gradient rather than a split.
+    /// The Te block and the Tp0u, Tp0y, Tp3S runs sit at the efficiency end in all
+    /// three rounds; Tp3O and the Tp0U, Tp0a, Tp0g, Tp0m runs at the performance end
+    /// in all three; and a third of the cores sit between them, changing sign from
+    /// round to round. No boundary falls in the 6+6 this chip actually has. macOS
+    /// offers no way to pin a thread to one core, so there is no sharper experiment
+    /// to run, and the cores are numbered rather than labelled: a wrong
+    /// "Performance core 3" would be worse than an honest "CPU core 3".
+    private static func m3Pro() -> [Entry] {
+        var e: [Entry] = []
+
+        // The aggregates, verified against the cores they summarise: TCMz follows the
+        // hottest core key for key, within 1 C of Tp3X across every sample, and TCMb
+        // sits with the die.
+        e += [Entry("TCMz", .cpu, "CPU, максимум", "CPU max", essential: true),
+              Entry("TCMb", .cpu, "CPU, среднее", "CPU average", essential: true),
+              chargeRegulator]
+
+        // TCDX is not a CPU aggregate, whatever its prefix suggests: it is the hotter
+        // of the SMC's two control zones. TCDX == max(Tf14, Tf24) held across 138
+        // samples in four experiments, to 0.2 C - the width of the rounding in the
+        // dump - and the two zones take turns: under a CPU load the CPU zone wins
+        // every sample, under a GPU load the GPU zone wins most of them.
+        e += [Entry("TCDX", .cooling, "Кристалл, максимум зон", "Die, hottest zone",
+                    essential: true)]
+
+        // Board sensors that answer to one engine and not the other. Under a CPU load
+        // that lifted the die 19 C, TFD0/TFD1 and TSG1/TSG2 moved 1-2; under a GPU
+        // load that lifted the clusters 17, they moved 10-15 and TED0/TED1 moved 5.
+        // Proximity rather than a part: they follow an engine, and are not it.
+        e += [Entry("TED0", .cpu, "Возле CPU 1", "CPU proximity 1"),
+              Entry("TED1", .cpu, "Возле CPU 2", "CPU proximity 2"),
+              Entry("TSCP", .cpu, "Возле CPU 3", "CPU proximity 3"),
+              Entry("TFD0", .gpu, "Возле GPU 1", "GPU proximity 1"),
+              Entry("TFD1", .gpu, "Возле GPU 2", "GPU proximity 2"),
+              Entry("TSG1", .gpu, "Возле GPU 3", "GPU proximity 3"),
+              Entry("TSG2", .gpu, "Возле GPU 4", "GPU proximity 4")]
+
+        // Ts0 is not the SSD here. On the M1 family iSMC reads these as SSD dies, and
+        // the M1 table names them so; on this M3 Pro they rise 7-16 C with the CPU
+        // while the real flash keys (TH0x, TH0a, TH0b) *fall* half a degree under the
+        // same load. They read with the SoC, and that is where they are filed.
+        for (n, base) in ["0", "C", "K", "Y"].enumerated() {
+            e += triplet("Ts0", base: Character(base), group: .cooling,
+                         ru: "Зона SoC \(n + 1)", en: "SoC zone \(n + 1)")
+        }
+        e += triplet("Ts0", base: "h", group: .cooling, ru: "Зона SoC 5", en: "SoC zone 5", width: 2)
+
+        // The SMC's own fan control, one block per zone - and the zones are the two
+        // engines, not the two fans, which is what the numbering first suggested.
+        // Loading each engine alone settles it: over an idle baseline, a CPU load
+        // moved the Tf1 block 14 C and left Tf2 within 3.7, and a GPU load moved Tf2
+        // by 15.1 and Tf1 by 5.1. Everything inside a block moves together within a
+        // degree - one zone read several times over, not several parts.
+        //
+        // The readings stay; the control does not. The setpoint goes to
+        // `smcZoneTarget`, the gains and flags to `nonTemperatures`.
+        //
+        // The six readings of a block are numbered rather than told apart. They
+        // differ by a fraction of a degree in a fixed order, which reads like one
+        // temperature at several filter lengths, but nothing here measured that, so
+        // nothing here claims it.
+        for (prefix, ru, en) in [("Tf1", "Зона SMC · CPU", "SMC zone · CPU"),
+                                 ("Tf2", "Зона SMC · GPU", "SMC zone · GPU")] {
+            e.append(Entry("\(prefix)4", .cooling, ru, en, essential: true))
+            for (n, suffix) in ["8", "9", "A", "D", "E"].enumerated() {
+                e.append(Entry("\(prefix)\(suffix)", .cooling,
+                               "\(ru) · датчик \(n + 2)", "\(en) · reading \(n + 2)"))
+            }
+        }
+        return e
+    }
+
+    /// What a control zone steers by, where that was measured. Numbered elsewhere:
+    /// the zone count matching the fan count on this Mac is a coincidence worth not
+    /// building on, and no other chip here has been loaded one engine at a time.
+    public static func smcZoneName(_ zone: Int, family: ChipFamily = .current) -> String {
+        guard family == .m3Pro, zone < m3ProZoneSubjects.count else {
+            return L10n.t("Зона \(zone + 1)", "Zone \(zone + 1)")
+        }
+        return m3ProZoneSubjects[zone]
+    }
+
+    private static let m3ProZoneSubjects = ["CPU", "GPU"]
 
     /// Keys laid out the same across Apple silicon, per both sources.
     private static func common() -> [Entry] {
         var e: [Entry] = []
+
+        // Ts0P and Ts1P: the Intel MacBook Pros' palm-rest sensors. On the M1 Max
+        // they read 31-33 C - skin temperature, twenty degrees below the SSD dies -
+        // and on the M3 Pro 31-33 C again, flat through a load that moves the SoC
+        // 16 C. iSMC lists them as an SSD controller on the M1 family; the readings
+        // do not fit that on either chip, so the older name stands, and it is the one
+        // inference in this table rather than a sourced name.
+        e += [Entry("Ts0P", .comfort, "Упор для рук 1", "Palm rest 1", essential: true),
+              Entry("Ts1P", .comfort, "Упор для рук 2", "Palm rest 2", essential: true)]
 
         e += [Entry("TG0H", .cooling, "Радиатор GPU", "GPU heatsink"),
               Entry("TaLP", .cooling, "Поток воздуха слева", "Airflow left", essential: true),
@@ -268,7 +652,9 @@ public enum SensorCatalog {
               Entry("TH0b", .storage, "NVMe, канал B", "NVMe channel B"),
               Entry("TS0P", .storage, "Возле SSD", "SSD proximity")]
 
-        e += [Entry("TB0T", .battery, "Батарея", "Battery", essential: true),
+        // "Hotspot" is Asahi's label, and it is the reason this one leads the group:
+        // TB1T and TB2T are ordinary cells, TB0T is the worst of them.
+        e += [Entry("TB0T", .battery, "Батарея, горячая точка", "Battery hotspot", essential: true),
               Entry("TB1T", .battery, "Батарея, датчик 1", "Battery sensor 1"),
               Entry("TB2T", .battery, "Батарея, датчик 2", "Battery sensor 2")]
 
@@ -306,7 +692,7 @@ public enum SensorCatalog {
             }
         }
 
-        e += [Entry("TW0P", .other, "Wi‑Fi", "Wi‑Fi", essential: true),
+        e += [Entry("TW0P", .other, "Wi‑Fi / Bluetooth", "Wi‑Fi / Bluetooth", essential: true),
               Entry("TRDX", .other, "Радиочасть, максимум", "RF, max"),
               Entry("TR0Z", .other, "Радиочасть, опорный", "RF reference"),
               Entry("TR1d", .other, "Радиочасть, зонд 1", "RF probe 1"),
@@ -449,6 +835,9 @@ public enum SensorCatalog {
     /// do not, including a few that pass for one by type and range.
     public static func looksLikeTemperature(key: String, type: String, value: Double) -> Bool {
         guard key.hasPrefix("T"), !nonTemperatures.contains(key) else { return false }
+        // A setpoint is in degrees and in range, and would sit at the top of the list
+        // as the hottest thing on the machine. It is reported beside the fan instead.
+        guard smcZoneTarget(key: key) == nil else { return false }
         guard type == "flt " || type == "ioft" else { return false }
         return value > 0 && value < 150
     }
@@ -456,7 +845,47 @@ public enum SensorCatalog {
     /// Read on this M1 Max: TVMD holds exactly 1.0, and the Ta05/Ta06/Ta0D/Ta0E
     /// set sits at 8-11 "degrees" in a warm, running laptop. Neither source names
     /// them; they are not temperatures.
-    private static let nonTemperatures: Set<String> = ["TVMD", "Ta05", "Ta06", "Ta0D", "Ta0E"]
+    ///
+    /// The rest is the SMC's fan control, read on an M3 Pro: Tf1* steers one fan and
+    /// Tf2* the other, and within each block these four keys never move. Over 18
+    /// samples spanning idle, an efficiency-cluster load and a load that took the
+    /// CPU from 54 to 90 C, Tf11 held 3.2, Tf1C held 1.0, Tf15 held 26.4 and Tf10
+    /// held 0.0, digit for digit - gains and flags, not readings. They are excluded
+    /// because a constant in the sensor list is worse than an absence: it can be
+    /// picked to drive a curve, and a curve driven by a constant never moves a fan.
+    private static let nonTemperatures: Set<String> = [
+        "TVMD", "Ta05", "Ta06", "Ta0D", "Ta0E",
+        "Tf10", "Tf11", "Tf15", "Tf1C",
+        "Tf20", "Tf21", "Tf25", "Tf2C",
+    ]
+
+    // MARK: What the SMC is steering by
+
+    /// The temperature the SMC's own fan control is aiming its zone at, if this key
+    /// holds one.
+    ///
+    /// `Tf16` = 79.6 and `Tf26` = 82.4 on the M3 Pro measured - the CPU zone's target
+    /// and the GPU zone's - and both sat there through everything the machine was put
+    /// through. The other constants of the block move with nothing either, but these
+    /// two are in degrees and in range, so unlike them they read convincingly as the
+    /// two hottest sensors on the machine, above the real CPU maximum. They are a
+    /// setpoint. Kept out of the sensor list and shown beside the fans instead, where
+    /// a target belongs: it is worth seeing what the automatic control would have
+    /// done while you hold the fans yourself.
+    public static func smcZoneTarget(key: String) -> Int? {
+        guard key.count == 4, key.hasPrefix("Tf"), key.hasSuffix("6") else { return nil }
+        guard let zone = Int(String(key[key.index(key.startIndex, offsetBy: 2)])), zone >= 1 else { return nil }
+        return zone - 1
+    }
+
+    /// The zone targets among `readings`, by zone: `[0: 79.6, 1: 82.4]`.
+    public static func smcZoneTargets(_ readings: [SensorReading]) -> [Int: Double] {
+        var targets: [Int: Double] = [:]
+        for reading in readings {
+            if let zone = smcZoneTarget(key: reading.key) { targets[zone] = reading.value }
+        }
+        return targets
+    }
 }
 
 public enum L10n {

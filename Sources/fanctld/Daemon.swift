@@ -23,6 +23,18 @@ final class Daemon {
     private var config: AppConfig
     private var controllers: [Int: FanController] = [:]
     private var temperatureKeys: [String] = []
+    /// The SMC's own fan setpoints, one per control zone. Read like a sensor but
+    /// reported apart from them - see `SMCZoneTarget`.
+    private var zoneTargetKeys: [(zone: Int, key: String)] = []
+    /// Per-engine power, and what it says about which sensor is what. Absent when
+    /// IOReport cannot be reached, which costs the machine only its learned names.
+    private let power = PowerReport()
+    private var affinity = EngineAffinity()
+    /// Verdicts already published. A name that has appeared in the interface is not
+    /// taken back: more evidence refines the sensors still unattributed, it does not
+    /// rename the ones the user has been reading for a week.
+    private var sensorEngines: [String: Engine] = [:]
+    private var lastAffinityCheck = Date.distantPast
     private var lastSnapshot: Snapshot?
     private var lastTick = Date()
     /// The same moment on a clock that stops while the Mac sleeps - how the
@@ -64,6 +76,9 @@ final class Daemon {
 
     func run() throws {
         Log.info("fanctld \(Self.version) starting, \(hardware.fans.count) fan(s), \(temperatureKeys.count) temperature sensors")
+        if !zoneTargetKeys.isEmpty {
+            Log.info("  SMC fan setpoints: \(zoneTargetKeys.map(\.key).joined(separator: ", "))")
+        }
         for fan in hardware.fans {
             Log.info("  fan \(fan.index): \(Int(fan.limits.minRPM))-\(Int(fan.limits.maxRPM)) rpm")
         }
@@ -93,11 +108,78 @@ final class Daemon {
     }
 
     private func discoverTemperatureSensors() {
-        let candidates = smc.allKeys().filter { $0.hasPrefix("T") }
-        temperatureKeys = candidates.filter { key in
-            guard let reading = smc.read(key) else { return false }
-            return SensorCatalog.looksLikeTemperature(key: key, type: reading.type, value: reading.value)
-        }.sorted()
+        let readings = smc.temperatureReadings()
+        temperatureKeys = readings.map(\.key).sorted()
+        zoneTargetKeys = smc.zoneTargets().map { (zone: $0.zone, key: $0.key) }
+        sensorEngines = Self.loadEngines()
+        // Names for the parts no table covers are read off this machine's own
+        // layout, so the catalogue has to be told what this machine reports.
+        SensorCatalog.configure(readings.map { SensorReading(key: $0.key, value: $0.value) },
+                                engines: sensorEngines)
+    }
+
+    /// Folds this tick into what is known about which sensor answers to which engine,
+    /// and publishes any sensor that has become clear since the last check.
+    ///
+    /// Checked every few minutes rather than every tick: solving for two hundred
+    /// sensors is cheap but not free, and nothing about the answer changes in a
+    /// second.
+    private func learnEngines(temperatures: [String: Double], interval: TimeInterval) {
+        guard let power else { return }
+        affinity.observe(power: power.sinceLastReading(), temperatures: temperatures,
+                         interval: interval)
+        guard Date().timeIntervalSince(lastAffinityCheck) >= 300 else { return }
+        lastAffinityCheck = Date()
+
+        var learned = false
+        for (key, verdict) in affinity.verdicts() where sensorEngines[key] == nil {
+            sensorEngines[key] = verdict.engine
+            learned = true
+            Log.info(String(format: "%@ follows the %@ (%.0f%% of what moves it, fit %.2f)",
+                            key, verdict.engine.rawValue, verdict.share * 100, verdict.fit))
+        }
+        guard learned else { return }
+        Self.saveEngines(sensorEngines)
+        SensorCatalog.configure(temperatures.map { SensorReading(key: $0.key, value: $0.value) },
+                                engines: sensorEngines)
+    }
+
+    // MARK: Learned engines, kept across restarts
+
+    static var enginesPath: String {
+        (configPath as NSString).deletingLastPathComponent + "/engines.json"
+    }
+
+    /// Tied to the machine, because the answer is: a config copied to another Mac
+    /// would carry names measured on this one's silicon.
+    private static var machineIdentity: String {
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 0 else { return "unknown" }
+        var bytes = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.model", &bytes, &size, nil, 0) == 0 else { return "unknown" }
+        return String(cString: bytes)
+    }
+
+    private struct LearnedEngines: Codable {
+        var machine: String
+        var engines: [String: Engine]
+    }
+
+    private static func loadEngines() -> [String: Engine] {
+        guard let data = FileManager.default.contents(atPath: enginesPath),
+              let saved = try? JSONDecoder().decode(LearnedEngines.self, from: data),
+              saved.machine == machineIdentity
+        else { return [:] }
+        Log.info("sensor engines restored: \(saved.engines.count) of them")
+        return saved.engines
+    }
+
+    private static func saveEngines(_ engines: [String: Engine]) {
+        let directory = (enginesPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(
+            LearnedEngines(machine: machineIdentity, engines: engines)) else { return }
+        try? data.write(to: URL(fileURLWithPath: enginesPath), options: .atomic)
     }
 
     private func rebuildControllers() {
@@ -122,6 +204,7 @@ final class Daemon {
 
     private func tick() {
         stateLock.lock()
+        let sinceLastTick = Date().timeIntervalSince(lastTick)
         lastTick = Date()
         lastTickAwake = Self.awakeSeconds()
         stateLock.unlock()
@@ -130,6 +213,13 @@ final class Daemon {
         temperatures.reserveCapacity(temperatureKeys.count)
         for key in temperatureKeys {
             if let reading = smc.read(key) { temperatures[key] = reading.value }
+        }
+
+        // A tick that came after a sleep spans hours of wall clock and no work at
+        // all; folding it in would tell the learner that an idle engine heated the
+        // whole machine. Only ticks that look like ticks are learned from.
+        if sinceLastTick > 0, sinceLastTick < config.pollInterval * 3 {
+            learnEngines(temperatures: temperatures, interval: sinceLastTick)
         }
 
         var readings: [FanReading] = []
@@ -170,6 +260,10 @@ final class Daemon {
             ))
         }
 
+        let targets = zoneTargetKeys.compactMap { zone, key in
+            smc.read(key).map { SMCZoneTarget(zone: zone, target: $0.value) }
+        }
+
         let now = Date().timeIntervalSince1970
         let snapshot = Snapshot(
             time: now,
@@ -177,7 +271,9 @@ final class Daemon {
                 .sorted { $0.key < $1.key },
             fans: readings,
             config: config,
-            daemonVersion: Self.version
+            daemonVersion: Self.version,
+            smcZoneTargets: targets.isEmpty ? nil : targets,
+            sensorEngines: sensorEngines.isEmpty ? nil : sensorEngines
         )
         lastSnapshot = snapshot
 

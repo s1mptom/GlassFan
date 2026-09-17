@@ -54,6 +54,30 @@ final class SMCDevice {
         guard result == SMC_OK else { throw Failure.unwritable(key) }
     }
 
+    /// Every key on this machine that carries a temperature, with its reading.
+    ///
+    /// One place, because three callers - the daemon, `--probe` and `--dump-sensors`
+    /// - have to agree on what counts as a sensor, and the moment they disagree the
+    /// dump stops describing what the app shows.
+    func temperatureReadings() -> [(key: String, type: String, value: Double)] {
+        allKeys().filter { $0.hasPrefix("T") }.compactMap { key in
+            guard let reading = read(key),
+                  SensorCatalog.looksLikeTemperature(key: key, type: reading.type, value: reading.value)
+            else { return nil }
+            return (key, reading.type, reading.value)
+        }
+    }
+
+    /// The temperatures the SMC's own fan control is steering its zones towards.
+    /// Not sensors, and deliberately not in the list above.
+    func zoneTargets() -> [(zone: Int, key: String, target: Double)] {
+        allKeys().compactMap { key in
+            guard let zone = SensorCatalog.smcZoneTarget(key: key),
+                  let reading = read(key), reading.value > 0 else { return nil }
+            return (zone, key, reading.value)
+        }.sorted { $0.zone < $1.zone }
+    }
+
     func allKeys() -> [String] {
         var count: UInt32 = 0
         guard smc_key_count(&count) == SMC_OK else { return [] }

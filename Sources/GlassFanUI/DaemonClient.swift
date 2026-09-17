@@ -51,15 +51,21 @@ final class DaemonClient {
                      sleptAt: Int? = nil) -> DaemonClient {
         let client = DaemonClient()
         guard connected else { return client }
-        client.feed = Feed(snapshot: DemoFixture.snapshot(alarming: alarming, fanless: fanless),
-                           history: DemoFixture.history(sleptAt: sleptAt))
+        let snapshot = DemoFixture.snapshot(alarming: alarming, fanless: fanless)
+        // The fixture is another Mac's sensor list, so the catalogue has to be told
+        // about it just as a live snapshot would - otherwise a preview renders this
+        // machine's layout over the fixture's keys.
+        SensorCatalog.configure(snapshot.sensors, engines: snapshot.sensorEngines ?? [:])
+        client.feed = Feed(snapshot: snapshot, history: DemoFixture.history(sleptAt: sleptAt))
         client.isConnected = true
         return client
     }
 
     func start() {
         if DemoFixture.isEnabled {
-            feed = Feed(snapshot: DemoFixture.snapshot(), history: DemoFixture.history())
+            let snapshot = DemoFixture.snapshot()
+            SensorCatalog.configure(snapshot.sensors, engines: snapshot.sensorEngines ?? [:])
+            feed = Feed(snapshot: snapshot, history: DemoFixture.history())
             isConnected = true
             return
         }
@@ -136,6 +142,10 @@ final class DaemonClient {
             feed.history = samples
 
         case .snapshot(let snapshot):
+            // The names of parts no table covers are read off the key layout, and
+            // the app may well be looking at a Mac it has no table for. Ignored when
+            // the list has not changed, so this costs nothing per reading.
+            SensorCatalog.configure(snapshot.sensors, engines: snapshot.sensorEngines ?? [:])
             let tracked = Set(snapshot.config.trackedSensors)
                 .union(snapshot.config.fans.flatMap(\.sensorKeys))
             var temps: [String: Double] = [:]

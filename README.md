@@ -11,7 +11,7 @@
 
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111?logo=apple">
-  <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-M1%20Pro%20%C2%B7%20M1%20Max-3987e5">
+  <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-M1%20Pro%20%C2%B7%20M1%20Max%20%C2%B7%20M3%20Pro-3987e5">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <a href="https://github.com/s1mptom/GlassFan/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/s1mptom/GlassFan?label=download&color=2ea44f"></a>
   <a href="https://github.com/s1mptom/GlassFan/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/s1mptom/GlassFan/actions/workflows/ci.yml/badge.svg"></a>
@@ -37,8 +37,9 @@ actual work.
   sensors, with hysteresis and smoothing so the fans do not hunt.
 - **Every sensor, named** — all ~220 temperature keys, grouped (CPU cores, GPU
   clusters, memory, SoC heatsinks, SSD, battery, chassis, power, board). The
-  essential ~40 are shown by default, in a fixed order that does not jump around;
-  sort by any column, search by name or key.
+  essential 40–55 are shown by default, in a fixed order that does not jump around;
+  sort by any column, search by name or key. On a chip with no table of its own the
+  parts are read off the machine's key layout rather than left unnamed.
 - **Live chart** — 5, 15 or 30 minutes of history, kept across daemon restarts and
   broken cleanly across sleep.
 - **Menu bar** — both fans, the mode switch and the headline temperatures one click away.
@@ -76,13 +77,60 @@ supported.
 | Mac | Status |
 |---|---|
 | MacBook Pro 14"/16", **M1 Pro** or **M1 Max** (2021) | Supported. Built and tested on an M1 Max (MacBookPro18,2); the M1 Pro models share its SMC layout, fan keys and sensor map. |
+| MacBook Pro 14"/16", **M3 Pro** (2023) | Supported. Measured on a Mac15,7 (16", 6+6 cores): 220 usable sensors, none unnamed, from a table of its own plus the key layout. |
 | Mac Studio, **M1 Max / M1 Ultra** | Should work: same chip family and sensor map. Not tested. |
-| Apple silicon MacBook Pro, **M2 and later** | Fan control uses the SMC's standard fan keys, read from the machine itself. Sensors are all shown; the ones laid out differently from the M1 family carry generic names. Not tested. |
+| Apple silicon Macs, **other M2/M3/M4 chips** | Fan control uses the SMC's standard fan keys, read from the machine itself. Sensors are all shown and named from the layout of the machine's own keys — cores, GPU clusters and heatsinks read as such, numbered rather than labelled. Not tested. |
 | **MacBook Air** (no fan) | Temperature monitoring only — the app says the Mac is cooled passively. |
 | Intel Macs | Not supported. |
 
 Fans and their limits are discovered at startup (`FNum`, `F<n>Mn`, `F<n>Mx`), and
 every sensor list is read off the machine, so nothing is hard-coded to one model.
+
+### Naming sensors on a chip nobody has catalogued
+
+Which part sits at which SMC key changes with every generation of Apple silicon, and
+Apple documents none of it. There is no table anywhere that covers the current Macs:
+[Stats](https://github.com/exelban/stats) has the M1 family right and its M3 entries
+do not describe the M3 Pro measured here at all, and Asahi Linux — who reverse-engineered
+the SMC protocol itself — label four temperature keys and say of the other 1,400 that
+"mostly you have to guess based on the four-character name". Their driver describes
+sensors per *machine*, because the keys differ even between two Macs with the same chip.
+
+So GlassFan reads the machine instead of looking it up, in two ways that need no table
+and no per-model testing:
+
+**The key layout gives the structure.** The SMC lays each part out as a run of two or
+three consecutive keys — probes first, the reading that leads them last — and cutting
+the machine's own keys into those runs recovers the parts without knowing the chip —
+on the M3 Pro measured, 17 zones of the CPU, 9 GPU clusters, 5 die zones and 4 SoC
+heatsinks, where every one of them used to read "unnamed".
+
+A run is only called a *core* when the machine agrees there are that many: `hw.physicalcpu`
+says 12 here against 17 runs, so they are zones. On the M1 Max the two come to ten and
+ten, and they are cores. Never "Performance core 3" — which core is which is not
+something the SMC says.
+
+**The machine's power meters give the subject.** macOS reports, unprivileged, what
+each engine is spending second by second (IOReport's "Energy Model"). A sensor that
+heats when the GPU spends and not when the CPU does is on the GPU, whatever its key
+looks like. The daemon watches twenty minutes of ordinary use, regresses every sensor
+on every engine at once — not one engine at a time, which lands every GPU sensor on
+whichever engine is busiest — and names only what it becomes sure of. The answer is
+kept in `engines.json` beside the config, tied to the machine, so it is learned once.
+`fanctld --learn` shows the same working, out loud.
+
+**Nothing is ever run to make this happen.** GlassFan puts no load on the Mac, warms
+nothing on purpose and asks you to do nothing: the daemon was already reading the
+sensors every second, and it now reads the power meters on the same tick. An ordinary
+day drives the engines apart by itself — a build, a video call, a game — and that is
+the whole experiment. On a Mac that is never busy, the engines stay quiet, no verdict
+is reached, and the layout-derived names simply stand.
+
+What this cannot do is tell a performance core from an efficiency one. The efficiency
+cluster spends about a twentieth of what the performance cluster does, six cores away
+on the same piece of silicon; three separate experiments could not pull the two apart
+in the temperatures, and macOS offers no way to pin a thread to a core. A cluster this
+code cannot tell apart is not one it labels.
 
 ## Download
 
@@ -206,6 +254,32 @@ later does not touch the engine.
 
 ## Measured on the hardware
 
+Checked on a MacBook Pro Mac15,7 (M3 Pro, 6+6 cores, 18-core GPU) on macOS 26.6,
+not assumed:
+
+- 220 usable temperature sensors, and **no memory sensors at all** — this chip
+  reports no `Tm` keys, so the Memory group is simply absent.
+- `Ts0*` reads with the SoC here (up 7–16 °C under a CPU load that leaves the flash
+  keys `TH0x`/`TH0a`/`TH0b` half a degree *cooler*), where on the M1 family the same
+  keys are the SSD. The M1 names are not reused for them.
+- `Tf1*` and `Tf2*` are the SMC's own fan control, one block per fan, not sensors.
+  `Tf14` is `TCDX` — the CPU die aggregate — digit for digit across every sample;
+  `Tf16` (79.6 °C) and `Tf26` (82.4 °C) are the setpoints the automatic control
+  steers to, and held those values through everything the machine was put through.
+  They are shown beside the fans rather than in the sensor list, where they read as
+  the two hottest things on the machine. The gains and flags of the block
+  (`Tf11`, `Tf15`, `Tf1C` and their `Tf2*` twins) are dropped.
+- Which cores are the performance ones is *not* established. Loading one cluster at a
+  time — a default-QoS thread against a background-QoS one, three alternating rounds
+  — heats the die as a gradient, not a split: the `Te` block and the `Tp0u`, `Tp0y`,
+  `Tp3S` runs sit at the efficiency end every round and `Tp3O`, `Tp0U`, `Tp0a`,
+  `Tp0g`, `Tp0m` at the performance end, but no boundary falls in the 6+6 the chip
+  has. macOS cannot pin a thread to a core, so the cores are numbered, not labelled.
+- The private IOHIDEventSystem route (usage page `0xff00`, usage 5) that some tools
+  use for named Apple silicon sensors works unprivileged here but reports only
+  `PMU tdie*`, `PMU tdev*`, `gas gauge battery` and `NAND CH0 temp` — no per-core
+  names. It is not a shortcut to a sensor map.
+
 Checked on a MacBook Pro 18,2 (M1 Max) on macOS 26/27, not assumed:
 
 - 2 fans, `F0*`/`F1*`, reporting 1499–5348 and 1499–5776 rpm.
@@ -227,6 +301,7 @@ Sensor names come from cross-checking two open projects against this machine:
 swift test                                   # FanKit and interface logic, no hardware
 ./.build/debug/fanctld --probe               # read-only hardware dump, no root
 ./.build/debug/fanctld --dump-sensors        # every temperature key with its name
+./.build/debug/fanctld --learn 600           # which engine each sensor answers to
 GLASSFAN_SOCKET=/tmp/gf.sock ./.build/debug/fanctld --dev   # unprivileged daemon for UI work
 ```
 
@@ -240,7 +315,13 @@ previews, fed from a fixture.
   [Ken Sorrell](https://www.sorrell.info/blog/liquid-glass-lens-effect),
   [Imad Rahmoune](https://imadrahmoune.com/liquid-glass/), and
   [LiquidGlassKit](https://github.com/DnV1eX/LiquidGlassKit)'s take on the iOS lens.
-- SMC sensor research: [Stats](https://github.com/exelban/stats), [iSMC](https://github.com/dkorunic/iSMC).
+- SMC sensor research: [Stats](https://github.com/exelban/stats) and
+  [iSMC](https://github.com/dkorunic/iSMC) for the M1 family's key map, and
+  [Asahi Linux](https://asahilinux.org/) — whose
+  [macsmc-hwmon](https://docs.kernel.org/hwmon/macsmc-hwmon.html) driver and its
+  `hwmon-*.dtsi` fragments are the only labels here that come from reverse-engineering
+  the SMC protocol itself. Their `TCHP = Charge Regulator` corrected a name this
+  project had wrong on both chips.
 
 ## Disclaimer
 
@@ -255,9 +336,11 @@ but you use it at your own risk. Not affiliated with Apple.
 GlassFan — управление вентиляторами и мониторинг температур для MacBook на Apple
 silicon, сделанный под macOS 26 и Liquid Glass.
 
-- **Нужно:** macOS 26 или новее, Apple silicon. Проверено на MacBook Pro M1 Max;
-  MacBook Pro на M1 Pro устроены так же (те же ключи SMC и датчики). MacBook Air —
-  только температуры. Intel не поддерживается.
+- **Нужно:** macOS 26 или новее, Apple silicon. Проверено на MacBook Pro M1 Max и
+  M3 Pro; MacBook Pro на M1 Pro устроены так же, как M1 Max (те же ключи SMC и
+  датчики). На остальных чипах датчики называются по раскладке ключей самой машины:
+  ядра, кластеры GPU и радиаторы читаются как таковые, но пронумерованы, а не
+  подписаны. MacBook Air — только температуры. Intel не поддерживается.
 - **Скачать:** GlassFan.dmg из [последнего релиза](https://github.com/s1mptom/GlassFan/releases/latest),
   перетащить в Программы. Релиз не нотаризован: при первом запуске откройте
   **Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть»**
