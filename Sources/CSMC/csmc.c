@@ -14,6 +14,9 @@ enum { KERNEL_INDEX_SMC = 2, SMC_CMD_READ = 5, SMC_CMD_WRITE = 6,
        SMC_CMD_KEY_FROM_INDEX = 8, SMC_CMD_KEY_INFO = 9 };
 
 static io_connect_t g_conn = 0;
+static int g_last_status = 0;
+
+int smc_last_status(void) { return g_last_status; }
 
 int smc_open(void) {
     if (g_conn) return SMC_OK;
@@ -30,10 +33,17 @@ void smc_close(void) {
 
 static int call_smc(SMCKeyData *in, SMCKeyData *out) {
     if (!g_conn) return SMC_ERR_OPEN;
+    g_last_status = 0;
     size_t sz = sizeof(SMCKeyData);
     kern_return_t r = IOConnectCallStructMethod(g_conn, KERNEL_INDEX_SMC, in, sizeof(SMCKeyData), out, &sz);
     if (r == kIOReturnNotPrivileged) return SMC_ERR_NOT_PRIVILEGED;
-    return r == KERN_SUCCESS ? SMC_OK : SMC_ERR_CALL;
+    if (r != KERN_SUCCESS) return SMC_ERR_CALL;
+    // The call succeeding says the message was delivered, not that the SMC agreed
+    // with it. The controller answers in its own status byte, and on Apple silicon
+    // it uses that byte to refuse fan writes (0x82) while the kernel reports success
+    // - which made every refused write look like it had worked.
+    g_last_status = (unsigned char)out->result;
+    return g_last_status == 0 ? SMC_OK : SMC_ERR_REJECTED;
 }
 
 static int key_info(uint32_t key, SMCKeyInfo *info) {
