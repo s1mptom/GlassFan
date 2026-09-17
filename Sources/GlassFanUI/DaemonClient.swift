@@ -209,6 +209,19 @@ final class DaemonClient {
         send(.setConfig(config))
     }
 
+    /// Tells the daemon the user has quit, and waits for it to land.
+    ///
+    /// Blocking, briefly, because the process is about to go: `send` hands the bytes
+    /// to the kernel, but an app that terminates in the same breath can have the
+    /// socket torn down with the write still in flight, and then the fans stay pinned
+    /// after a goodbye that looked like it was sent. A tenth of a second is not felt
+    /// at quit and is far longer than a unix socket needs.
+    func sayGoodbye() {
+        guard fd >= 0 else { return }
+        send(.goodbye)
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+
     func releaseAll() {
         send(.releaseAll)
         draftConfig = nil
