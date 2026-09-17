@@ -279,6 +279,13 @@ not assumed:
   use for named Apple silicon sensors works unprivileged here but reports only
   `PMU tdie*`, `PMU tdev*`, `gas gauge battery` and `NAND CH0 temp` — no per-core
   names. It is not a shortcut to a sensor map.
+- **A successful SMC write does not mean the SMC kept the value.** With both fans
+  pinned to a fixed maximum, `F0Md` sat at 3 and `F0Tg` at 0 while the daemon wrote
+  1 and 5349 into them every second — every write returning `SMC_OK`, and the fans
+  stopped. The fans do hold at first and are taken back a couple of minutes later.
+  Targets are read back now, and a fan the SMC quietly took over reads
+  "system took over" rather than "fixed, 5349 rpm". Why it takes them back is not
+  yet known.
 
 Checked on a MacBook Pro 18,2 (M1 Max) on macOS 26/27, not assumed:
 

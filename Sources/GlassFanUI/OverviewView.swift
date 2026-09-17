@@ -86,7 +86,7 @@ struct OverviewView: View {
             ForEach(client.snapshot?.fans ?? []) { fan in
                 HStack(spacing: 20) {
                     FanDial(rpm: fan.actualRPM, limits: fan.limits, controlled: fan.forced,
-                            alert: fan.emergency || fan.writeError != nil)
+                            alert: fan.alerting)
 
                     VStack(alignment: .leading, spacing: 9) {
                         Text(L10n.t("Вентилятор \(fan.index + 1)", "Fan \(fan.index + 1)"))
@@ -109,10 +109,10 @@ struct OverviewView: View {
     }
 
     private func modeChip(_ fan: FanReading) -> some View {
-        let refused = fan.writeError != nil
+        let refused = fan.failureCaption != nil
         let controlled = fan.forced
         let label: String = {
-            if refused { return L10n.t("запись отклонена", "write refused") }
+            if let failure = fan.failureCaption { return failure }
             switch fan.mode {
             case .auto:  return L10n.t("Система", "System")
             case .fixed: return L10n.t("Фиксировано", "Fixed")
@@ -164,7 +164,7 @@ struct OverviewView: View {
     private func subtitle(for fan: FanReading) -> String {
         if fan.emergency { return L10n.t("аварийный режим", "emergency") }
         // Without this the fan reads "write refused" and "under control" at once.
-        if fan.writeError != nil { return L10n.t("настройка не применилась", "the setting did not take") }
+        if let failure = fan.failureSubtitle { return failure }
         if let temp = fan.drivingTemp, fan.mode == .curve {
             return L10n.t("ведёт \(Format.temperature(temp))", "driven by \(Format.temperature(temp))")
         }

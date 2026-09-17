@@ -47,6 +47,14 @@ final class FanHardware {
 
     /// Holds a fan at `rpm`. Forced mode is re-asserted periodically because sleep and
     /// wake can hand control back to the system behind our back.
+    ///
+    /// The target is read back afterwards, because a write returning `SMC_OK` does not
+    /// mean the SMC kept it. Measured on an M3 Pro: with both fans set to a fixed
+    /// maximum, `F0Md` sat at 3 and `F0Tg` at 0 while this wrote 1 and 5349 into them
+    /// every second, every write succeeding and the fans stopped. Without the read
+    /// back, the daemon reported that it was holding both fans and the interface said
+    /// "fixed, 5349 rpm" over a machine whose fans were not turning - the one thing
+    /// this code is otherwise careful never to do.
     func setTarget(_ index: Int, rpm: Double) throws {
         let ticks = sinceAssert[index] ?? reassertEvery
         if !owned.contains(index) || ticks >= reassertEvery {
@@ -55,9 +63,34 @@ final class FanHardware {
         } else {
             sinceAssert[index] = ticks + 1
         }
-        owned.insert(index)
         try smc.write("F\(index)Tg", value: rpm)
+
+        // A single mismatch is not a verdict: the system writes into these keys too,
+        // and one tick can land between our write and its own. Three in a row is the
+        // SMC keeping its own value, not a race.
+        let kept = targetRPM(index) ?? .nan
+        guard abs(kept - rpm) > Self.targetTolerance else {
+            ignoredWrites[index] = 0
+            owned.insert(index)
+            return
+        }
+        let misses = (ignoredWrites[index] ?? 0) + 1
+        ignoredWrites[index] = misses
+        guard misses >= Self.ignoredBeforeGivingUp else {
+            owned.insert(index)
+            return
+        }
+        // Nothing was taken, so there is nothing to give back later either.
+        owned.remove(index)
+        sinceAssert[index] = nil
+        throw SMCDevice.Failure.ignored(key: "F\(index)Tg", asked: rpm, kept: kept)
     }
+
+    /// Rounding in the SMC's own float, not a licence for it to pick another speed.
+    private static let targetTolerance = 5.0
+    private static let ignoredBeforeGivingUp = 3
+    /// Consecutive writes the SMC accepted and discarded, per fan.
+    private var ignoredWrites: [Int: Int] = [:]
 
     /// Gives a fan back to the system, but only one we actually took.
     func release(_ index: Int) throws {

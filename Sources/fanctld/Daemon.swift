@@ -232,6 +232,7 @@ final class Daemon {
             // intention behind it.
             var applied = false
             var writeError: String?
+            var writeFailure: FanWriteFailure?
             do {
                 if let target {
                     try hardware.setTarget(fan.index, rpm: target)
@@ -241,6 +242,9 @@ final class Daemon {
                 }
             } catch {
                 writeError = "\(error)"
+                writeFailure = (error as? SMCDevice.Failure).map {
+                    if case .ignored = $0 { return .ignored } else { return .refused }
+                } ?? .refused
                 if lastWriteError[fan.index] != writeError {
                     Log.error("fan \(fan.index): \(error)")
                 }
@@ -250,13 +254,17 @@ final class Daemon {
             readings.append(FanReading(
                 index: fan.index,
                 actualRPM: hardware.actualRPM(fan.index) ?? 0,
-                targetRPM: target ?? hardware.targetRPM(fan.index) ?? 0,
+                // What the SMC actually holds, not what we asked for: with the write
+                // discarded those are different numbers, and the honest one is the
+                // machine's.
+                targetRPM: hardware.targetRPM(fan.index) ?? target ?? 0,
                 limits: fan.limits,
                 mode: controller.settings.mode,
                 forced: applied,
                 drivingTemp: controller.lastDrivingTemp,
                 emergency: controller.isEmergency,
-                writeError: writeError
+                writeError: writeError,
+                writeFailure: writeFailure
             ))
         }
 
