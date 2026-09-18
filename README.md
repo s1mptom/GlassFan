@@ -43,7 +43,9 @@ actual work.
   sort by any column, search by name or key. On a chip with no table of its own the
   parts are read off the machine's key layout rather than left unnamed.
 - **Live chart** — 5, 15 or 30 minutes of history, kept across daemon restarts and
-  broken cleanly across sleep.
+  broken cleanly across sleep. Six sensors at a time, which is how many colours the
+  palette has that stay apart for everyone; ticking a seventh is refused where you tick
+  it rather than accepted and then not drawn.
 - **Menu bar** — both fans, the mode switch and the headline temperatures one click away.
 - **Liquid Glass throughout** — adjustable frost and tone for the window, and a
   segmented control whose selection you can pick up like a drop of glass (below).

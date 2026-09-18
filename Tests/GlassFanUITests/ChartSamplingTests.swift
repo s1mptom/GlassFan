@@ -130,3 +130,57 @@ struct ChartBreakTests {
         #expect(ChartSampling.breakGap(window: 300, limit: 180, pollInterval: 5) == 15)
     }
 }
+
+/// Ticking a sensor puts it on the chart, or says why it cannot. What it must never do
+/// again is accept the tick and change nothing: the chart drew the first six of the
+/// ticked keys and the seventh was announced as a number in the corner of a legend,
+/// which read as a checkbox that did not work.
+@Suite("Chart slots")
+struct ChartSlotsTests {
+    private var full: [String] { (0..<ChartSlots.limit).map { "T00\($0)" } }
+
+    @Test("a sensor is added while there is room")
+    func addsWhileThereIsRoom() {
+        let one = ChartSlots.toggling("TCMz", in: [])
+        #expect(one == ["TCMz"])
+        let two = ChartSlots.toggling("Tg05", in: ["TCMz"])
+        #expect(two == ["TCMz", "Tg05"])
+        // The newcomer goes last, so nothing already drawn moves colour.
+        #expect(two?.last == "Tg05")
+    }
+
+    @Test("a full chart refuses another, rather than taking it and not drawing it")
+    func refusesWhenFull() {
+        #expect(full.count == ChartSlots.limit)
+        #expect(ChartSlots.toggling("TCMz", in: full) == nil)
+    }
+
+    @Test("removing always works, full or not")
+    func removesWhenFull() {
+        let without = ChartSlots.toggling(full[2], in: full)
+        #expect(without?.count == ChartSlots.limit - 1)
+        #expect(without?.contains(full[2]) == false)
+        // And having made room, the next one is taken.
+        #expect(ChartSlots.toggling("TCMz", in: without ?? [])?.count == ChartSlots.limit)
+    }
+
+    @Test("what is drawn is what the palette has colours for, in order")
+    func drawnIsBoundedByThePalette() {
+        let over = full + ["TaLW", "TaRW"]
+        #expect(ChartSlots.drawn(over).count == ChartSlots.limit)
+        #expect(Array(ChartSlots.drawn(over)) == full)
+        // A key ticked when the chart was full waits rather than pushing one off.
+        #expect(!ChartSlots.drawn(over).contains("TaLW"))
+        #expect(ChartSlots.limit == Palette.series.count)
+    }
+
+    @Test("a list already over the limit is left alone, not trimmed behind the user")
+    func existingOverflowSurvives() {
+        // Configs written before the limit existed hold more than fits. They keep every
+        // key: silently dropping choices somebody made is worse than not drawing them,
+        // and the list marks which are waiting so they can be removed deliberately.
+        let over = full + ["TaLW"]
+        #expect(ChartSlots.toggling("TaRW", in: over) == nil)
+        #expect(ChartSlots.toggling("TaLW", in: over)?.count == ChartSlots.limit)
+    }
+}

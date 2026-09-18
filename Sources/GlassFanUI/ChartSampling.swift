@@ -115,3 +115,36 @@ enum ChartSampling {
         return lower...max(upper, lower + step)
     }
 }
+
+/// How many sensors the chart can draw, and what ticking one more does.
+///
+/// The limit is the palette's, not an arbitrary number: past it a series would have to
+/// reuse a colour, and two lines the same colour is worse than a line not drawn. What
+/// was worse still is what used to happen - the tick was accepted, the key appended,
+/// and the chart went on drawing the first six. The box changed, nothing else did, and
+/// the only hint was a count in the corner of the legend.
+enum ChartSlots {
+    static var limit: Int { Palette.series.count }
+
+    /// The list after ticking or unticking `key`, or `nil` if there is no room.
+    ///
+    /// Removing always works. Adding is refused rather than accepted and ignored, so
+    /// that the interface can say no where the pointer already is instead of saying
+    /// nothing anywhere near it.
+    static func toggling(_ key: String, in tracked: [String]) -> [String]? {
+        if let index = tracked.firstIndex(of: key) {
+            var updated = tracked
+            updated.remove(at: index)
+            return updated
+        }
+        guard tracked.count < limit else { return nil }
+        return tracked + [key]
+    }
+
+    /// The ones actually drawn, of those ticked. Order decides: the chart takes the
+    /// first it has colours for, so a key ticked when the chart was full waits its turn
+    /// rather than pushing an older line off.
+    static func drawn(_ tracked: [String]) -> ArraySlice<String> {
+        tracked.prefix(limit)
+    }
+}

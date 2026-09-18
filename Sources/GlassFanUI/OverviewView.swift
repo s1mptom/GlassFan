@@ -30,11 +30,11 @@ struct OverviewView: View {
     }
 
     private var trackedKeys: [String] {
-        Array(chartableKeys.prefix(Palette.series.count))
+        Array(ChartSlots.drawn(chartableKeys))
     }
 
     private var overflowCount: Int {
-        max(chartableKeys.count - Palette.series.count, 0)
+        max(chartableKeys.count - ChartSlots.limit, 0)
     }
 
     /// Three hundred was more marks than the plot has pixels to tell apart, and
