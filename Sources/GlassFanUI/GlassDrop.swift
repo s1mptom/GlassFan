@@ -164,6 +164,11 @@ struct DropOutline: Shape {
 struct GlassDropRefraction: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     let geometry: DropGeometry?
+    /// How far the shader may reach for what it shows. By default worked out from the
+    /// drop each frame; a control whose drop is large gives a fixed one, because a
+    /// reach that changes as the effect switches off came out as one frame of the
+    /// content drawn out of place.
+    var reach: CGSize? = nil
 
     /// Room around the content for the parts of the drop that reach past it: it
     /// stands taller than the row it sits on, and draws out when it moves.
@@ -188,8 +193,8 @@ struct GlassDropRefraction: ViewModifier {
                            ]),
                     // How far the drop reaches for what it shows: the magnified body,
                     // the bend of the rim, and the reflection beside it.
-                    maxSampleOffset: CGSize(width: bounds.width * 0.3 + thick + 8,
-                                            height: bounds.height * 0.3 + thick + 8),
+                    maxSampleOffset: reach ?? CGSize(width: bounds.width * 0.3 + thick + 8,
+                                                     height: bounds.height * 0.3 + thick + 8),
                     isEnabled: geometry.isVisible
                 )
                 .padding(-room)

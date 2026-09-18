@@ -41,20 +41,11 @@ struct GlassDropList<Row: View>: View {
                       size: size, selection: selection)
         }
         // Each row's frame, under the glass rather than in the rows. Drawn in the rows,
-        // it went through the lens with them and came out magnified inside the drop - a
-        // second, smaller frame inside the first. Out here the frames stay where they
-        // are, and at rest the drop is exactly the chosen one's.
+        // it went through the lens with them and came out magnified inside the drop.
+        // And where the drop is, the frame is not: the chosen row's frame *is* the drop,
+        // so a row's frame fades as the drop covers it and comes back as it leaves.
         .background(alignment: .topLeading) {
-            ZStack(alignment: .topLeading) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, frame in
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Palette.ink.opacity(0.025))
-                        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(Palette.ink.opacity(0.07), lineWidth: 0.5))
-                        .frame(width: frame.width, height: frame.height)
-                        .offset(x: frame.minX, y: frame.minY)
-                }
-            }
+            DropFrames(drop: drop, rows: rows, selection: selection, cornerRadius: cornerRadius)
         }
         .overlay(alignment: .topLeading) {
             DropLight(drop: drop, rows: rows, size: size)
@@ -227,10 +218,10 @@ final class DropListState {
                   now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> DropGeometry {
         advance(to: date.timeIntervalSinceReferenceDate, rows: rows, now: now)
         let up = max(lift.value, 0)
-        // Grown a little past the row as it lifts, as the segmented drop grows past its track.
+        // The row's own size, not grown past it as the segmented drop grows past its
+        // track: grown, it read as a drop over a frame rather than the frame lifting.
         func box(_ y: LensSpring, _ w: LensSpring, _ h: LensSpring) -> CGRect {
             CGRect(x: x - w.value / 2, y: y.value - h.value / 2, width: w.value, height: h.value)
-                .insetBy(dx: -3 * up, dy: -3 * up)
         }
         let apart = abs(headY.value - tailY.value)
         return DropGeometry(
@@ -304,7 +295,8 @@ private struct DropRefracted<Content: View>: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: nil, paused: !drop.engaged)) { context in
-            content.modifier(GlassDropRefraction(geometry: drop.engaged ? drop.geometry(at: context.date, rows: rows) : nil))
+            content.modifier(GlassDropRefraction(geometry: drop.engaged ? drop.geometry(at: context.date, rows: rows) : nil,
+                                                 reach: CGSize(width: 48, height: 48)))
         }
     }
 }
@@ -354,6 +346,47 @@ private struct DropGlass: View {
             .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius, style: .continuous))
             .frame(width: rect.width, height: rect.height)
             .offset(x: rect.minX, y: rect.minY)
+    }
+}
+
+/// The rows' frames, each faded by how much of it the drop covers - so the drop never
+/// sits over a frame of its own shape, and settles into a row by taking its frame's place.
+private struct DropFrames: View {
+    let drop: DropListState
+    let rows: [CGRect]
+    let selection: Int
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        if drop.engaged {
+            TimelineView(.animation) { context in
+                let bounds = drop.geometry(at: context.date, rows: rows).bounds
+                frames { index in 1 - min(Self.coverage(of: rows[index], by: bounds) * 1.4, 1) }
+            }
+        } else {
+            frames { index in index == selection ? 0 : 1 }
+        }
+    }
+
+    private func frames(_ opacity: @escaping (Int) -> CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, frame in
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Palette.ink.opacity(0.025))
+                    .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Palette.ink.opacity(0.07), lineWidth: 0.5))
+                    .frame(width: frame.width, height: frame.height)
+                    .offset(x: frame.minX, y: frame.minY)
+                    .opacity(opacity(index))
+            }
+        }
+    }
+
+    /// The share of `row` inside `drop`, 0...1.
+    static func coverage(of row: CGRect, by drop: CGRect) -> CGFloat {
+        let overlap = row.intersection(drop)
+        guard !overlap.isNull, row.width > 0, row.height > 0 else { return 0 }
+        return (overlap.width * overlap.height) / (row.width * row.height)
     }
 }
 
