@@ -105,12 +105,7 @@ struct CurveGroups: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Palette.ink.opacity(0.025))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Palette.ink.opacity(0.07), lineWidth: 0.5))
-        )
+        // The card's frame is the list's to draw, under the glass - see `GlassDropList`.
         .contentShape(Rectangle())
         .onHover { inside in
             if inside { hovered = index } else if hovered == index { hovered = nil }

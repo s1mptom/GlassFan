@@ -7,6 +7,7 @@ import SwiftUI
 /// a platter. Pick it up and it follows the pointer, sticking to the row it is over.
 ///
 /// The glass is the segmented control's own: the same shader, light and springs.
+/// The list draws each row's frame; rows bring only their content.
 struct GlassDropList<Row: View>: View {
     let count: Int
     @Binding var selection: Int
@@ -38,6 +39,22 @@ struct GlassDropList<Row: View>: View {
         .background(alignment: .topLeading) {
             DropGlass(drop: drop, rows: rows, resting: frames[selection], cornerRadius: cornerRadius,
                       size: size, selection: selection)
+        }
+        // Each row's frame, under the glass rather than in the rows. Drawn in the rows,
+        // it went through the lens with them and came out magnified inside the drop - a
+        // second, smaller frame inside the first. Out here the frames stay where they
+        // are, and at rest the drop is exactly the chosen one's.
+        .background(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, frame in
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Palette.ink.opacity(0.025))
+                        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(Palette.ink.opacity(0.07), lineWidth: 0.5))
+                        .frame(width: frame.width, height: frame.height)
+                        .offset(x: frame.minX, y: frame.minY)
+                }
+            }
         }
         .overlay(alignment: .topLeading) {
             DropLight(drop: drop, rows: rows, size: size)
@@ -391,7 +408,6 @@ private struct DropListPreviewRow: View {
         }
         .frame(maxWidth: .infinity, minHeight: index == 0 ? 60 : 44, alignment: .leading)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Palette.ink.opacity(0.025)))
     }
 }
 
@@ -421,7 +437,6 @@ private struct DropListPreviewRow: View {
             .font(.system(size: 12))
             .frame(maxWidth: .infinity, minHeight: index == 0 ? 64 : 40, alignment: .leading)
             .padding(.horizontal, 10)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Palette.ink.opacity(0.025)))
     }
     .frame(width: 184)
     .padding(24)
