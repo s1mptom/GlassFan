@@ -41,7 +41,9 @@ static float smoothMin(float a, float b, float k) {
 static float dropDist(float2 p, float4 head, float4 tail, float radius, float neck) {
     float d = roundBox(p, head, radius);
     if (any(head != tail)) {
-        const float k = 8.0;
+        // Melted over a good part of its own thickness, so the join reads as liquid
+        // pulled between two places rather than two pills touching.
+        float k = max(8.0, 0.45 * min(min(head.z, head.w), min(tail.z, tail.w)));
         d = smoothMin(d, roundBox(p, tail, radius), k);
         if (neck > 0.0) {
             d = smoothMin(d, segmentDist(p, head.xy + head.zw * 0.5, tail.xy + tail.zw * 0.5) - neck, k);
@@ -198,7 +200,10 @@ half4 glassLight(float2 position, half4 color, float4 head, float4 tail, float r
     float angle = (-135.0 + 28.0 * clamp(motion, -1.0, 1.0)) * M_PI_F / 180.0;
     float2 light = float2(cos(angle), sin(angle));
     float facing = dot(shape.outward, light);
-    float band = pow(1.0 - clamp(depth / (bevel * 0.7), 0.0, 1.0), 1.8);
+    // Drawn out, the drop is thin, and a band sized to its thickness would glaze it
+    // over from rim to rim; the light keeps to its edges instead.
+    float reach = bevel * (any(head != tail) ? 0.45 : 0.7);
+    float band = pow(1.0 - clamp(depth / reach, 0.0, 1.0), 1.8);
     float glare = (pow(max(facing, 0.0), 1.6) + 0.55 * pow(max(-facing, 0.0), 2.0)) * band;
     float edgeLight = pow(1.0 - clamp(depth / 3.0, 0.0, 1.0), 2.0) * (dark ? 0.6 : 0.55);
     half highlight = half(clamp((glare * (dark ? 0.8 : 1.15) + edgeLight) * lift, 0.0, 0.95));

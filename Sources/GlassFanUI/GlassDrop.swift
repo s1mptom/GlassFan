@@ -133,7 +133,15 @@ struct DropGeometry: Equatable {
 
 struct DropOutline: Shape {
     let geometry: DropGeometry
-    func path(in rect: CGRect) -> Path { geometry.outline }
+    /// With the bridge between the ends, or the ends alone.
+    var bridged = true
+
+    func path(in rect: CGRect) -> Path {
+        if bridged { return geometry.outline }
+        var ends = geometry
+        ends.neck = 0
+        return ends.outline
+    }
 }
 
 /// Refracts what is under the drop, on the GPU. Off whenever the drop is down: a
