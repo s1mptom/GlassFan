@@ -297,6 +297,9 @@ struct FansView: View {
                     curves: settings.curves,
                     editing: editing,
                     driving: fan.drivingCurve,
+                    curveTemps: settings.wrappedValue.curves.map { rule in
+                        rule.sensorKeys.compactMap { client.reading(for: $0) }.max()
+                    },
                     limits: fan.limits,
                     currentTemp: fan.drivingTemp,
                     currentRPM: fan.actualRPM,

@@ -12,6 +12,10 @@ struct CurveEditor: View {
     @Binding var editing: Int
     /// The curve setting the fan's speed right now, when that is known.
     var driving: Int? = nil
+    /// Each curve's own temperature: the hottest sensor of its group. The live marker
+    /// is the driving curve's; the others are drawn where they each stand, so a marker
+    /// on one curve is not read against another's line.
+    var curveTemps: [Double?] = []
     let limits: FanLimits
     let currentTemp: Double?
     let currentRPM: Double?
@@ -59,6 +63,7 @@ struct CurveEditor: View {
                 minimumGuide(in: plot)
                 curveShape(in: plot)
                 guides(in: plot)
+                curvePositions(in: plot)
                 liveMarker(in: plot)
                 handles(in: plot)
                 curveNumbers(in: plot)
@@ -272,6 +277,34 @@ struct CurveEditor: View {
                 .accessibilityValue(L10n.t("\(Int(point.temperature)) градусов, \(Int(point.rpm)) оборотов в минуту",
                                            "\(Int(point.temperature)) degrees, \(Int(point.rpm)) rpm"))
         }
+    }
+
+    /// Where each curve other than the driving one stands: at its own sensors'
+    /// temperature, asking for its own speed. The x axis is a different sensor for
+    /// each curve, so without these the one live marker - the driving curve's - sat
+    /// under the other curves' lines as if they were being ignored.
+    private func curvePositions(in plot: CGRect) -> some View {
+        Canvas { context, _ in
+            guard numbered else { return }
+            for index in curves.indices where index != driving {
+                guard curveTemps.indices.contains(index), let temp = curveTemps[index],
+                      let rpm = curves[index].curve.rpm(at: temp) else { continue }
+                let role = CurveRole.of(index, editing: editing, driving: driving)
+                let raw = position(CurvePoint(temperature: temp, rpm: rpm), in: plot)
+                let at = CGPoint(x: min(max(raw.x, plot.minX), plot.maxX), y: min(max(raw.y, plot.minY), plot.maxY))
+                // Solid, as the live marker is: a ring here reads as a handle to drag.
+                let halo = Path(ellipseIn: CGRect(x: at.x - 6, y: at.y - 6, width: 12, height: 12))
+                let dot = Path(ellipseIn: CGRect(x: at.x - 3.5, y: at.y - 3.5, width: 7, height: 7))
+                context.fill(halo, with: .color(role.colour.opacity(0.22)))
+                context.fill(dot, with: .color(role == .idle ? Palette.ink.opacity(0.6) : role.colour))
+                let label = context.resolve(Text(Format.temperature(temp))
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(role == .idle ? Palette.ink.opacity(0.45) : role.colour))
+                context.draw(label, at: CGPoint(x: at.x + 9, y: at.y - 9), anchor: .leading)
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private func liveMarker(in plot: CGRect) -> some View {
@@ -491,7 +524,7 @@ private struct CurveReadout: View {
             CurvePoint(temperature: 50, rpm: 1000), CurvePoint(temperature: 100, rpm: 4000)])),
     ]
     @Previewable @State var editing = 0
-    CurveEditor(curves: $curves, editing: $editing, driving: 1,
+    CurveEditor(curves: $curves, editing: $editing, driving: 1, curveTemps: [33, 72, 41],
                 limits: FanLimits(minRPM: 1499, maxRPM: 5776),
                 currentTemp: 72, currentRPM: 4072, learnedFloor: 1240, onCommit: {})
         .padding(16)
