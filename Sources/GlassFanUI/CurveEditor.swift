@@ -1,11 +1,17 @@
 import SwiftUI
 import FanKit
 
-/// Drag-to-edit fan curve. Swift Charts cannot do this, so the plot is drawn by hand.
+/// Drag-to-edit fan curves. Swift Charts cannot do this, so the plot is drawn by hand.
 ///
 /// X is temperature, Y is rpm. A live marker shows where the fan is sitting right now.
+/// With several curves all are drawn and one is edited: it is blue and has handles,
+/// the one driving the fan is orange, the rest grey. Their numbers sit at their ends.
 struct CurveEditor: View {
-    @Binding var curve: FanCurve
+    @Binding var curves: [CurveRule]
+    /// The curve whose points take drags and double-clicks.
+    @Binding var editing: Int
+    /// The curve setting the fan's speed right now, when that is known.
+    var driving: Int? = nil
     let limits: FanLimits
     let currentTemp: Double?
     let currentRPM: Double?
@@ -19,6 +25,18 @@ struct CurveEditor: View {
     var highlighted: Int? = nil
 
     private let tempRange: ClosedRange<Double> = 30...100
+
+    /// The edited curve. Read and written through `curves`, so everything that shaped
+    /// the one curve this editor used to have now shapes whichever is chosen.
+    private var curve: FanCurve {
+        get { curves.indices.contains(editing) ? curves[editing].curve : FanCurve(points: []) }
+        nonmutating set {
+            guard curves.indices.contains(editing) else { return }
+            curves[editing].curve = newValue
+        }
+    }
+
+    private var numbered: Bool { curves.count > 1 }
     @State private var dragging: Int?
     @State private var hovered: Int?
     @State private var readoutSize = CGSize(width: 150, height: 40)
@@ -33,7 +51,7 @@ struct CurveEditor: View {
     var body: some View {
         GeometryReader { geometry in
             let plot = CGRect(x: 34, y: 8,
-                              width: max(geometry.size.width - 44, 10),
+                              width: max(geometry.size.width - 44 - (numbered ? 26 : 0), 10),
                               height: max(geometry.size.height - 52, 10))
 
             ZStack(alignment: .topLeading) {
@@ -43,6 +61,7 @@ struct CurveEditor: View {
                 guides(in: plot)
                 liveMarker(in: plot)
                 handles(in: plot)
+                curveNumbers(in: plot)
                 axisLabels(in: plot)
                 readout(in: plot)
             }
@@ -121,19 +140,32 @@ struct CurveEditor: View {
         .allowsHitTesting(false)
     }
 
+    /// A curve as drawn: flat from the plot's left edge to its first point, through
+    /// its points, and flat on to the right edge - which is what the fan does past them.
+    private func line(_ curve: FanCurve, in plot: CGRect) -> Path {
+        var path = Path()
+        guard let first = curve.points.first, let last = curve.points.last else { return path }
+        path.move(to: CGPoint(x: plot.minX, y: position(first, in: plot).y))
+        for point in curve.points { path.addLine(to: position(point, in: plot)) }
+        path.addLine(to: CGPoint(x: plot.maxX, y: position(last, in: plot).y))
+        return path
+    }
+
+    /// The other curves under the one being edited: the driving one orange, the rest
+    /// grey and dashed. Only the edited one is filled and has handles.
     private func curveShape(in plot: CGRect) -> some View {
         Canvas { context, _ in
+            for index in curves.indices where index != editing {
+                let path = line(curves[index].curve, in: plot)
+                if index == driving {
+                    context.stroke(path, with: .color(Palette.heat), lineWidth: 2)
+                } else {
+                    context.stroke(path, with: .color(Palette.ink.opacity(0.28)),
+                                   style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                }
+            }
             guard !curve.points.isEmpty else { return }
-            var path = Path()
-            let first = curve.points[0]
-            path.move(to: CGPoint(x: plot.minX, y: position(first, in: plot).y))
-            for point in curve.points {
-                path.addLine(to: position(point, in: plot))
-            }
-            if let last = curve.points.last {
-                path.addLine(to: CGPoint(x: plot.maxX, y: position(last, in: plot).y))
-            }
-
+            let path = line(curve, in: plot)
             var fill = path
             fill.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
             fill.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
@@ -143,6 +175,45 @@ struct CurveEditor: View {
                 startPoint: CGPoint(x: plot.midX, y: plot.minY),
                 endPoint: CGPoint(x: plot.midX, y: plot.maxY)))
             context.stroke(path, with: .color(Palette.calm), lineWidth: 2.5)
+        }
+    }
+
+    /// Each curve's number at its right-hand end, in the margin; clicking one edits it.
+    private func curveNumbers(in plot: CGRect) -> some View {
+        Group {
+            if numbered {
+                let ends = curves.map { rule -> CGFloat in
+                    let rpm = rule.curve.points.last?.rpm ?? 0
+                    return position(CurvePoint(temperature: tempRange.upperBound, rpm: rpm), in: plot).y
+                }
+                let placed = CurveNumberLayout.place(ends: ends, editing: editing, within: plot.minY...plot.maxY)
+                let x = plot.maxX + 16
+                ZStack(alignment: .topLeading) {
+                    Canvas { context, _ in
+                        for number in placed {
+                            let role = CurveRole.of(number.index, editing: editing, driving: driving)
+                            var leader = Path()
+                            leader.move(to: CGPoint(x: plot.maxX, y: number.lineY))
+                            leader.addLine(to: CGPoint(x: plot.maxX + 4, y: number.lineY))
+                            leader.addLine(to: CGPoint(x: x - 9, y: number.y))
+                            context.stroke(leader, with: .color(role.colour.opacity(0.6)), lineWidth: 1)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                    ForEach(placed, id: \.index) { number in
+                        Button { editing = number.index } label: {
+                            CurveNumber(number: number.index + 1,
+                                        role: CurveRole.of(number.index, editing: editing, driving: driving),
+                                        size: 18)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(L10n.t("Править кривую \(number.index + 1)", "Edit curve \(number.index + 1)"))
+                        .accessibilityLabel(L10n.t("Кривая \(number.index + 1)", "Curve \(number.index + 1)"))
+                        .position(x: x, y: number.y)
+                    }
+                }
+            }
         }
     }
 
@@ -388,15 +459,15 @@ private struct CurveReadout: View {
 }
 
 #Preview("Curve readout") {
-    @Previewable @State var curve = FanCurve(points: [
+    @Previewable @State var curves = [CurveRule(sensorKeys: [], curve: FanCurve(points: [
         CurvePoint(temperature: 45, rpm: 0),
         CurvePoint(temperature: 62, rpm: 1200),
         CurvePoint(temperature: 78, rpm: 3400),
         CurvePoint(temperature: 92, rpm: 5348),
-    ])
+    ]))]
     VStack(spacing: 0) {
         ForEach([1, 2], id: \.self) { point in
-            CurveEditor(curve: $curve, limits: FanLimits(minRPM: 1499, maxRPM: 5348),
+            CurveEditor(curves: $curves, editing: .constant(0), limits: FanLimits(minRPM: 1499, maxRPM: 5348),
                         currentTemp: 58, currentRPM: 1700, onCommit: {}, highlighted: point)
                 .frame(height: 260)
                 .padding(20)
@@ -405,4 +476,26 @@ private struct CurveReadout: View {
     .frame(width: 600)
     .background(Color(red: 0.11, green: 0.13, blue: 0.18))
     .environment(\.colorScheme, .dark)
+}
+
+/// Palm rests, CPU and GPU: the palm rests' curve being edited, the CPU's driving,
+/// and curves 1 and 2 ending at the same speed, so their numbers have to part.
+#Preview("Curve editor · three curves") {
+    @Previewable @State var curves = [
+        CurveRule(sensorKeys: ["Ts0P"], curve: FanCurve(points: [
+            CurvePoint(temperature: 40, rpm: 0), CurvePoint(temperature: 55, rpm: 1800),
+            CurvePoint(temperature: 75, rpm: 3400), CurvePoint(temperature: 90, rpm: 5776)])),
+        CurveRule(sensorKeys: ["TCMz"], curve: FanCurve(points: [
+            CurvePoint(temperature: 60, rpm: 2500), CurvePoint(temperature: 85, rpm: 5776)])),
+        CurveRule(sensorKeys: ["Tg05"], curve: FanCurve(points: [
+            CurvePoint(temperature: 50, rpm: 1000), CurvePoint(temperature: 100, rpm: 4000)])),
+    ]
+    @Previewable @State var editing = 0
+    CurveEditor(curves: $curves, editing: $editing, driving: 1,
+                limits: FanLimits(minRPM: 1499, maxRPM: 5776),
+                currentTemp: 72, currentRPM: 4072, learnedFloor: 1240, onCommit: {})
+        .padding(16)
+        .frame(width: 700, height: 300)
+        .background(Color(red: 0.12, green: 0.14, blue: 0.19))
+        .environment(\.colorScheme, .dark)
 }

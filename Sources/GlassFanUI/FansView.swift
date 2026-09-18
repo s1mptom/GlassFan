@@ -10,6 +10,8 @@ struct FansView: View {
     static let selectedKey = "fans.selected"
     @State private var showingSensorPicker = false
     @State private var hoveredFan: Int?
+    /// Per fan, which of its curves is being edited.
+    @State private var editingCurve: [Int: Int] = [:]
 
     private var fans: [FanReading] { client.snapshot?.fans ?? [] }
     private var fan: FanReading? { fans.first { $0.index == selected } ?? fans.first }
@@ -314,14 +316,16 @@ struct FansView: View {
     }
 
     private func curvePanel(_ fan: FanReading, _ settings: Binding<FanSettings>) -> some View {
-        Group {
-            if settings.wrappedValue.curves[0].curve.points.isEmpty {
+        let editing = editingBinding(for: fan)
+        let current = settings.wrappedValue.curves[editing.wrappedValue]
+        return Group {
+            if current.curve.points.isEmpty {
                 VStack(spacing: 14) {
                     Text(L10n.t("Кривая ещё не задана", "No curve yet"))
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.ink.opacity(0.55))
                     Button(L10n.t("Создать кривую", "Create a curve")) {
-                        settings.wrappedValue.curves[0].curve = .starter(maxRPM: fan.limits.maxRPM)
+                        settings.wrappedValue.curves[editing.wrappedValue].curve = .starter(maxRPM: fan.limits.maxRPM)
                         client.commit()
                     }
                     .buttonStyle(.glassProminent)
@@ -329,7 +333,9 @@ struct FansView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 CurveEditor(
-                    curve: settings.curves[0].curve,
+                    curves: settings.curves,
+                    editing: editing,
+                    driving: fan.drivingCurve,
                     limits: fan.limits,
                     currentTemp: fan.drivingTemp,
                     currentRPM: fan.actualRPM,
@@ -340,6 +346,14 @@ struct FansView: View {
             }
         }
         .background(panelBackground)
+    }
+
+    /// Which of a fan's curves is being edited, kept per fan and within its curves.
+    private func editingBinding(for fan: FanReading) -> Binding<Int> {
+        Binding(
+            get: { min(editingCurve[fan.index] ?? 0, settings(for: fan).curves.count - 1) },
+            set: { editingCurve[fan.index] = $0 }
+        )
     }
 
     private var panelBackground: some View {
