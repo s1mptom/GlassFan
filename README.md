@@ -35,6 +35,8 @@ actual work.
 - **Curves you drag** — temperature against speed, with the point's exact values
   beside the pointer as you set it. A curve can go to 0 rpm: Apple silicon fans stop
   completely when told to, and run steadily well below the SMC's advertised minimum.
+  How far below is learned from the fan rather than assumed — see *The speed a fan
+  will not go below*.
 - **Driven by the sensors you pick** — a curve follows the hottest of any set of
   sensors, with hysteresis and smoothing so the fans do not hunt.
 - **Every sensor, named** — all ~220 temperature keys, grouped (CPU cores, GPU
@@ -138,6 +140,28 @@ cluster spends about a twentieth of what the performance cluster does, six cores
 on the same piece of silicon; three separate experiments could not pull the two apart
 in the temperatures, and macOS offers no way to pin a thread to a core. A cluster this
 code cannot tell apart is not one it labels.
+
+### The speed a fan will not go below
+
+`F<n>Mn` is the SMC's advertised minimum and not the truth: a fan asked for less keeps
+going. On the M3 Pro here one asked for 446 rpm settled at 968. So every curve point
+between a stop and that figure draws a speed the fan will not run at — the line says
+600, the fan says 968, and the editor is the only place that believes the 600.
+
+That figure cannot be a number in a table: it belongs to the fan, and this project
+keeps no per-model tables. It cannot be measured on demand either, because measuring
+means spinning somebody's fans up and down to find where they give out, which is not a
+thing to do to a person's machine to draw a dashed line.
+
+So it is learned from work already being done. The daemon holds a fan at a speed and
+reads back what the fan did, once a second, because it has to anyway. When the reading
+settles above what was asked for, the fan has refused to go lower and has said what its
+floor is. Three separate refusals before it is believed — one settled stretch is a fan
+that happened to sit there — and a fan coasting down from full speed is not settled,
+however many speeds it passes through on the way.
+
+The curve editor then draws that line instead of the SMC's, labelled for what it is.
+Kept in `fans.json` beside the config and tied to the machine, so it is learned once.
 
 ## Download
 

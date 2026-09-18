@@ -9,6 +9,10 @@ struct CurveEditor: View {
     let limits: FanLimits
     let currentTemp: Double?
     let currentRPM: Double?
+    /// The slowest this fan has been watched actually turning, where that is known.
+    /// Drawn instead of the SMC's advertised minimum, because it is the one a curve
+    /// drawn below is really going to meet.
+    var learnedFloor: Double? = nil
     var onCommit: () -> Void
 
     /// For previews: a point to show the readout for, as if the pointer were on it.
@@ -94,15 +98,21 @@ struct CurveEditor: View {
     /// scale runs to zero and this line just says where "minimum" would have
     /// been. Below it the fan runs slow and, at zero, stops.
     private func minimumGuide(in plot: CGRect) -> some View {
-        let y = position(CurvePoint(temperature: tempRange.lowerBound, rpm: limits.minRPM), in: plot).y
+        // The measured floor where there is one. The SMC's own figure is advice - a fan
+        // asked for less keeps going - so a line drawn at it marks a place nothing
+        // actually happens, while the speed the fan will not go below goes unmarked.
+        let shown = learnedFloor ?? limits.minRPM
+        let y = position(CurvePoint(temperature: tempRange.lowerBound, rpm: shown), in: plot).y
         return ZStack(alignment: .topLeading) {
             Path { path in
                 path.move(to: CGPoint(x: plot.minX, y: y))
                 path.addLine(to: CGPoint(x: plot.maxX, y: y))
             }
-            .stroke(Palette.ink.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
-            Text(L10n.t("\(Format.rpm(limits.minRPM)) · минимум SMC",
-                        "\(Format.rpm(limits.minRPM)) · SMC minimum"))
+            .stroke(Palette.ink.opacity(learnedFloor == nil ? 0.18 : 0.3),
+                    style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+            Text(learnedFloor == nil
+                 ? L10n.t("\(Format.rpm(shown)) · минимум SMC", "\(Format.rpm(shown)) · SMC minimum")
+                 : L10n.t("\(Format.rpm(shown)) · ниже не крутит", "\(Format.rpm(shown)) · will not go below"))
                 .font(.system(size: 9.5))
                 .monospacedDigit()
                 .foregroundStyle(Palette.ink.opacity(0.32))
