@@ -238,43 +238,6 @@ struct GlassSegmented<Value: Hashable>: View {
 
 // MARK: - Lens
 
-/// A damped spring for one number, stepped by hand.
-///
-/// The lens's position, width, lift and stretch each have one. They were SwiftUI
-/// animations first, and SwiftUI animates a view's animatable values together,
-/// under whichever animation last touched any of them: the glide took on the
-/// stretch's bounce and overshot, and every new animation restarted the others.
-struct LensSpring {
-    var value: CGFloat = 0
-    var velocity: CGFloat = 0
-    var target: CGFloat = 0
-    private var stiffness: CGFloat = 400
-    private var damping: CGFloat = 40
-
-    /// In SwiftUI's own terms: `response` is the period of the undamped motion, and
-    /// a `dampingFraction` of 1 arrives without overshooting.
-    mutating func tune(response: CGFloat, dampingFraction: CGFloat) {
-        let omega = 2 * .pi / max(response, 0.01)
-        stiffness = omega * omega
-        damping = 2 * dampingFraction * omega
-    }
-
-    mutating func jump(to newValue: CGFloat) {
-        value = newValue
-        target = newValue
-        velocity = 0
-    }
-
-    mutating func step(_ dt: CGFloat) {
-        velocity += (-stiffness * (value - target) - damping * velocity) * dt
-        value += velocity * dt
-    }
-
-    func isResting(within tolerance: CGFloat) -> Bool {
-        abs(value - target) < tolerance && abs(velocity) < tolerance * 20
-    }
-}
-
 @Observable
 final class LensState {
     /// From the press until the drop has settled. Only then is the lens drawn and
@@ -299,8 +262,7 @@ final class LensState {
     @ObservationIgnored var token = 0
     @ObservationIgnored var onArrival: (() -> Void)?
     @ObservationIgnored var onSettled: (() -> Void)?
-    @ObservationIgnored private var steppedTo: TimeInterval = 0
-    @ObservationIgnored private var askedAt: TimeInterval = 0
+    @ObservationIgnored private var clock = FrameClock()
 
     init() {
         stretch.tune(response: 0.26, dampingFraction: 0.5)
@@ -313,7 +275,7 @@ final class LensState {
         lift.jump(to: 0)
         stretch.jump(to: 0)
         pointer = frame.midX
-        steppedTo = 0
+        clock.reset()
         engaged = true
     }
 
@@ -323,28 +285,11 @@ final class LensState {
                             stretch: stretch.value, motion: min(max(x.velocity / 1200, -1), 1), band: band)
     }
 
-    /// Brings the springs up to `time`, once a frame.
-    ///
-    /// The lens is three views - the glass under the labels, the refraction, the
-    /// light over them - and each asks for the frame it is drawing. Their timelines
-    /// hand them times up to 3 ms apart within one frame; stepped to each, the three
-    /// parts of the drop were drawn a point or two apart, by a different amount
-    /// every frame, and a fast drop shimmered. The first to ask in a frame steps the
-    /// springs; the others, arriving within a few milliseconds, get the same drop.
+    /// Brings the springs up to `time`, once a frame - see `FrameClock`.
     private func advance(to time: TimeInterval) {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now - askedAt > 0.004 else { return }
-        askedAt = now
-        guard time > steppedTo else { return }
-        // After a stall - a screen being built - the drop carries on from where it
-        // was, rather than leaping to where it would have got to.
-        let elapsed = steppedTo == 0 ? 0 : min(time - steppedTo, 1.0 / 30)
-        steppedTo = time
-        guard elapsed > 0 else { return }
-
-        let steps = Int((elapsed * 480).rounded(.up))
-        let dt = CGFloat(elapsed) / CGFloat(steps)
-        for _ in 0..<steps {
+        guard let step = clock.advance(to: time) else { return }
+        let dt = step.dt
+        for _ in 0..<step.count {
             x.step(dt)
             width.step(dt)
             lift.step(dt)
@@ -378,7 +323,7 @@ private struct LensRefracted<Content: View>: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: nil, paused: !lens.engaged)) { context in
-            content.modifier(LensRefraction(geometry: lens.engaged ? lens.geometry(at: context.date, band: band) : nil))
+            content.modifier(GlassDropRefraction(geometry: lens.engaged ? lens.geometry(at: context.date, band: band).drop : nil))
         }
     }
 }
@@ -432,7 +377,10 @@ private struct LensOverlay: View {
     var body: some View {
         if lens.engaged {
             TimelineView(.animation) { context in
-                Lens(geometry: lens.geometry(at: context.date, band: band), pointer: lens.pointer, rowSize: rowSize)
+                let geometry = lens.geometry(at: context.date, band: band)
+                GlassDropLight(geometry: geometry.drop,
+                               pointer: CGPoint(x: lens.pointer, y: geometry.rect.midY),
+                               size: rowSize)
             }
         }
     }
@@ -462,167 +410,8 @@ struct LensGeometry: Equatable {
         return CGRect(x: grown.midX - w / 2, y: grown.midY - h / 2, width: w, height: h)
     }
 
-    static let maxMagnification: CGFloat = 1.3
-    var magnification: CGFloat { 1 + (Self.maxMagnification - 1) * lift }
-
-    var isVisible: Bool { lift > 0.002 }
-}
-
-/// Refracts the labels and the track's outline through the drop, and lights it,
-/// on the GPU. Off whenever the drop is down: a layer effect renders the view
-/// offscreen, and a resting control has no business paying for that.
-private struct LensRefraction: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    let geometry: LensGeometry?
-
-    /// Room around the content for the parts of the drop that reach past it: it
-    /// stands taller than the track, and draws out wider when it moves.
-    private let room: CGFloat = 16
-
-    func body(content: Content) -> some View {
-        if let library = LensShaders.library {
-            let geometry = geometry ?? LensGeometry(centreX: 0, width: 0, lift: 0, stretch: 0, band: .zero)
-            let rect = geometry.rect.offsetBy(dx: room, dy: room)
-            content
-                .padding(room)
-                .layerEffect(
-                    library.glassLens(
-                        .float4(rect.minX, rect.minY, rect.width, rect.height),
-                        .float4(rect.minX, rect.minY, rect.width, rect.height),
-                        .float(rect.height / 2),
-                        .float(0),
-                        .float(geometry.magnification),
-                        .float(min(geometry.lift, 1)),
-                        .float(geometry.motion),
-                        // The ink follows the scheme: dark labels in light mode.
-                        .float(colorScheme == .light ? 1 : 0)
-                    ),
-                    // How far the drop reaches for what it shows: the magnified
-                    // body, the bend of the rim, and the reflection beside it.
-                    maxSampleOffset: CGSize(width: rect.width * 0.3 + rect.height + 8,
-                                            height: rect.height + 8),
-                    isEnabled: geometry.isVisible
-                )
-                .padding(-room)
-        } else {
-            content
-        }
-    }
-}
-
-enum LensShaders {
-    /// The compiled lens shader, or nil if the app was put together without it -
-    /// then the lens still lifts and glides, only without magnifying.
-    static let library: ShaderLibrary? = {
-        let name = "GlassFan_GlassFanUI.bundle"
-        let token = Bundle(for: LensState.self)
-        let places = [Bundle.main.resourceURL, Bundle.main.bundleURL, token.resourceURL,
-                      token.bundleURL.deletingLastPathComponent()]
-        for place in places.compactMap({ $0 }) {
-            if let bundle = Bundle(url: place.appendingPathComponent(name)),
-               let url = bundle.url(forResource: "default", withExtension: "metallib") {
-                return ShaderLibrary(url: url)
-            }
-        }
-        // Xcode previews lay the package out their own way; SwiftPM's accessor
-        // knows it. Not used elsewhere, because it traps when the bundle is missing.
-        return Runtime.isPreview ? ShaderLibrary.bundle(.module) : nil
-    }()
-}
-
-/// The light on the drop and what it casts: the glare, edge and shading worked out
-/// from its shape by a shader, its shadow on the track, and the bloom under the
-/// pointer.
-///
-/// Painted in one `Canvas` rather than built from views: as a shadow, masks and a
-/// dozen strokes, the lens was rebuilt as a view tree on every frame, and that,
-/// not the drawing, was what moving it cost.
-private struct Lens: View {
-    @Environment(\.colorScheme) private var colorScheme
-    let geometry: LensGeometry
-    let pointer: CGFloat
-    let rowSize: CGSize
-
-    /// Room around the row for what reaches past it: the lifted lens, its shadow.
-    private let margin: CGFloat = 16
-
-    var body: some View {
-        if geometry.isVisible {
-            let rect = geometry.rect
-            ZStack(alignment: .topLeading) {
-                Canvas { context, _ in
-                    context.translateBy(x: margin, y: margin)
-                    paint(in: &context, lens: rect)
-                }
-                if let library = LensShaders.library {
-                    let lens = rect.offsetBy(dx: margin, dy: margin)
-                    Rectangle()
-                        .fill(.white)
-                        .colorEffect(library.glassLight(
-                            .float4(lens.minX, lens.minY, lens.width, lens.height),
-                            .float4(lens.minX, lens.minY, lens.width, lens.height),
-                            .float(lens.height / 2),
-                            .float(0),
-                            .float(min(geometry.lift, 1)),
-                            .float(geometry.motion),
-                            .float(colorScheme == .light ? 1 : 0)
-                        ))
-                }
-            }
-            .frame(width: rowSize.width + margin * 2, height: rowSize.height + margin * 2)
-            .offset(x: -margin, y: -margin)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-    }
-
-    private func paint(in context: inout GraphicsContext, lens: CGRect) {
-        let outline = Capsule().path(in: lens)
-        // Faster than the glass shrinks, so a landing drop never shows two edges.
-        let edges = geometry.lift * geometry.lift
-        paintShadow(in: &context, lens: lens, outline: outline, opacity: edges)
-        context.drawLayer { layer in
-            layer.opacity = edges
-            layer.clip(to: outline)
-            paintBloom(in: &layer, lens: lens)
-        }
-    }
-
-    /// Cast on the track below, and kept off the inside of the lens: seen through
-    /// clear glass, a shadow underneath reads as a smudge.
-    private func paintShadow(in context: inout GraphicsContext, lens: CGRect, outline: Path, opacity: CGFloat) {
-        context.drawLayer { layer in
-            layer.opacity = opacity
-            var outside = Path(CGRect(x: -margin, y: -margin,
-                                      width: rowSize.width + margin * 2, height: rowSize.height + margin * 2))
-            outside.addPath(outline)
-            layer.clip(to: outside, style: FillStyle(eoFill: true))
-
-            let box = lens.insetBy(dx: -7, dy: -6).offsetBy(dx: 0, dy: 3)
-            let radius = box.height / 2
-            layer.translateBy(x: box.midX, y: box.midY)
-            layer.scaleBy(x: box.width / box.height, y: 1)
-            layer.fill(Path(ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)),
-                       with: .radialGradient(Gradient(stops: [.init(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.12),
-                                                                    location: 0.6),
-                                                              .init(color: .black.opacity(0), location: 1)]),
-                                             center: .zero, startRadius: 0, endRadius: radius))
-        }
-    }
-
-    /// A soft bloom under the pointer - the response system glass gives to a touch.
-    /// The rest of the drop's light is the shader's, worked out from its shape.
-    private func paintBloom(in context: inout GraphicsContext, lens: CGRect) {
-        let dark = colorScheme == .dark
-        context.blendMode = dark ? .plusLighter : .normal
-        let radius = lens.height * 0.8
-        let bloomX = min(max(pointer, lens.minX + lens.height * 0.3), lens.maxX - lens.height * 0.3)
-        context.fill(Path(ellipseIn: CGRect(x: bloomX - radius, y: lens.midY - radius,
-                                            width: radius * 2, height: radius * 2)),
-                     with: .radialGradient(Gradient(colors: [.white.opacity(dark ? 0.08 : 0.16), .white.opacity(0)]),
-                                           center: CGPoint(x: bloomX, y: lens.midY),
-                                           startRadius: 0, endRadius: radius))
-    }
+    /// The lens as the shared glass draws it: a capsule.
+    var drop: DropGeometry { .capsule(rect, lift: lift, motion: motion) }
 }
 
 // MARK: - Previews
