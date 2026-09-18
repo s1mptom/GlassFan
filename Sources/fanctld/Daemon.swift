@@ -3,7 +3,7 @@ import FanKit
 
 /// Owns the control loop: read sensors, decide, write fans, publish.
 final class Daemon {
-    static let version = "0.1.9"
+    static let version = "0.1.10"
     /// Overridable so the daemon can be run from a build directory during development,
     /// where /var/run is not writable and fan writes are expected to fail.
     static var socketPath = ProcessInfo.processInfo.environment["GLASSFAN_SOCKET"]
