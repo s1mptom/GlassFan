@@ -182,6 +182,127 @@ if let index = CommandLine.arguments.firstIndex(of: "--learn") {
     }
 }
 
+/// Proves a takeover rather than assuming one.
+///
+///     fanctld --takeover-test [rpm]
+///
+/// Seeing a fan at the speed that was asked for is suggestive and not proof: the SMC
+/// might have wanted it spinning anyway. So this drives the machine cold, hands the
+/// fans back, waits until the SMC has stopped them of its own accord - the state where
+/// nothing used to work - and only then asks for a speed. A fan that goes from the
+/// system's own zero to a number nobody else had a reason to pick was taken from it.
+///
+/// One process, and it starts no daemons. The first version of this orchestrated three
+/// of them with a shell script, killed them by matching an environment variable that
+/// `pkill -f` cannot see, and left all three running as root fighting over the same
+/// keys - which is exactly the failure this code is otherwise built to avoid, arrived
+/// at through the test for it. It also ran `launchctl bootout` and could not put the
+/// service back. Nothing here touches launchd or spawns anything.
+///
+/// It drives `FanHardware`, not a copy of it, so what passes here is what the daemon
+/// does. Set both fans to System in GlassFan first: the daemon writes nothing in that
+/// mode, and two writers is the thing being avoided.
+if CommandLine.arguments.contains("--takeover-test") {
+    let arguments = CommandLine.arguments.drop { $0 != "--takeover-test" }.dropFirst()
+    let wanted = Double(arguments.first ?? "") ?? 2600
+    guard getuid() == 0 else { print("--takeover-test needs root"); exit(1) }
+    do {
+        let smc = try SMCDevice()
+        let hardware = FanHardware(smc: smc)
+        guard let fan = hardware.fans.first else { print("no fans found"); exit(1) }
+        let index = fan.index
+
+        if let mode = smc.read("F\(index)Md")?.value, mode == 1 {
+            print("F\(index)Md is 1: something already holds this fan.")
+            print("Set both fans to System in GlassFan and run this again.")
+            exit(0)
+        }
+
+        let restoreLock = NSLock()
+        var done = false
+        func restore() {
+            restoreLock.lock(); defer { restoreLock.unlock() }
+            guard !done else { return }
+            done = true
+            hardware.releaseAll()
+            try? smc.write("F\(index)Md", value: 0)
+            print(String(format: "restored: F%dMd %.0f, Ftst %.0f",
+                         index, smc.read("F\(index)Md")?.value ?? -1,
+                         smc.read("Ftst")?.value ?? -1))
+            fflush(stdout)
+        }
+        func finish(_ code: Int32) -> Never { restore(); exit(code) }
+        let stop = ManagedAtomicFlag()
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: minimumTestSignalQueue)
+            source.setEventHandler { stop.raise() }
+            source.resume()
+            minimumTestSignals.append(source)
+        }
+        func zone() -> Double { smc.read("TCDX")?.value ?? -1 }
+        func rpm() -> Double { hardware.actualRPM(index) ?? -1 }
+        func mode() -> Double { hardware.rawMode(index) ?? -1 }
+        /// Holds the fan for `seconds`, re-asserting each second the way the control
+        /// loop does - the unlock needs several passes before it takes.
+        func hold(_ target: Double, seconds: Int, label: String) {
+            for second in 1...seconds {
+                if stop.isRaised { print("interrupted"); finish(1) }
+                do { try hardware.setTarget(index, rpm: target) }
+                catch { if second % 10 == 0 { print("  \(label) t+\(second)s: \(error)") } }
+                Thread.sleep(forTimeInterval: 1)
+                if second % 10 == 0 {
+                    print(String(format: "  %@ t+%3ds  %.0f rpm  F%dMd %.0f  TCDX %.1f",
+                                 label, second, rpm(), index, mode(), zone()))
+                    fflush(stdout)
+                }
+            }
+        }
+
+        print("=== 1. cooling: fan \(index) at maximum for 90s ===")
+        hold(fan.limits.maxRPM, seconds: 90, label: "cool")
+
+        print("=== 2. handing back, then waiting for the SMC to stop it by itself ===")
+        hardware.releaseAll()
+        try? smc.write("F\(index)Md", value: 0)
+        var stopped = false
+        for elapsed in stride(from: 0, to: 600, by: 5) {
+            if stop.isRaised { print("interrupted"); finish(1) }
+            Thread.sleep(forTimeInterval: 5)
+            if rpm() == 0 {
+                print("  stopped by the system after \(elapsed + 5)s")
+                print(String(format: "  PROOF  F%dMd %.0f   F%dTg %.0f   Ftst %.0f   %.0f rpm   TCDX %.1f",
+                             index, mode(), index, hardware.targetRPM(index) ?? -1,
+                             smc.read("Ftst")?.value ?? -1, rpm(), zone()))
+                stopped = true
+                break
+            }
+            if elapsed % 60 == 0 {
+                print(String(format: "  wait t+%3ds  %.0f rpm  F%dMd %.0f  TCDX %.1f",
+                             elapsed, rpm(), index, mode(), zone()))
+                fflush(stdout)
+            }
+        }
+        guard stopped else {
+            print("  it never stopped; the machine is too busy to be a fair test")
+            finish(0)
+        }
+
+        print("=== 3. asking for \(Int(wanted)) rpm from that stopped state ===")
+        hold(wanted, seconds: 60, label: "take")
+        let settled = rpm()
+        print(String(format: "result: %.0f rpm against %.0f asked, F%dMd %.0f",
+                     settled, wanted, index, mode()))
+        print(abs(settled - wanted) < 250 && mode() == 1
+              ? "TAKEOVER: the fan went from the system's own zero to the speed asked for"
+              : "NOT TAKEN: the fan did not reach the speed asked for")
+        finish(0)
+    } catch {
+        print("takeover-test failed: \(error)")
+        exit(1)
+    }
+}
+
 /// Puts the machine's own thermal management back, whatever left it switched off.
 ///
 /// `Ftst` raised is the Mac cooling itself by nobody's rules. The daemon clears it on

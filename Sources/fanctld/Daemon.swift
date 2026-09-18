@@ -3,7 +3,7 @@ import FanKit
 
 /// Owns the control loop: read sensors, decide, write fans, publish.
 final class Daemon {
-    static let version = "0.1.7"
+    static let version = "0.1.8"
     /// Overridable so the daemon can be run from a build directory during development,
     /// where /var/run is not writable and fan writes are expected to fail.
     static var socketPath = ProcessInfo.processInfo.environment["GLASSFAN_SOCKET"]
@@ -40,6 +40,10 @@ final class Daemon {
     /// said goodbye to it, and starting suspended would silently disable a curve
     /// after a reboot.
     private var suspended = false
+    /// Whether this daemon is the one that writes to the fans. A second daemon on the
+    /// same machine reads, serves and records, and keeps its hands off the hardware.
+    private let ownership = FanOwnership()
+    private var ownsTheFans = true
     private var lastAffinityCheck = Date.distantPast
     private var lastSnapshot: Snapshot?
     private var lastTick = Date()
@@ -87,6 +91,26 @@ final class Daemon {
         }
         for fan in hardware.fans {
             Log.info("  fan \(fan.index): \(Int(fan.limits.minRPM))-\(Int(fan.limits.maxRPM)) rpm")
+        }
+
+        // One writer. A second daemon fighting the first over the same keys makes the
+        // fans hunt - spin up, stop, spin up - and neither can tell the other's writes
+        // from the SMC keeping its own value.
+        ownsTheFans = ownership.claim()
+        guard ownsTheFans else {
+            Log.warn("another fanctld already has the fans (lock at \(FanOwnership.path))")
+            Log.warn("this one will read sensors and serve the interface, and write nothing")
+            server.onCommand = { [weak self] command in self?.handle(command) }
+            server.onConnect = { [weak self] fd in self?.greet(fd) }
+            try server.start()
+            installSignalHandling()
+            startHistorySaver()
+            let readOnly = DispatchSource.makeTimerSource(queue: loopQueue)
+            readOnly.schedule(deadline: .now(), repeating: config.pollInterval)
+            readOnly.setEventHandler { [weak self] in self?.tick() }
+            readOnly.resume()
+            self.timer = readOnly
+            dispatchMain()
         }
 
         // Whatever the previous run - or another fan utility - left behind, start from
@@ -236,7 +260,9 @@ final class Daemon {
             // Suspended is not a mode, so the controller still runs and the chart
             // still has a driving temperature to show when the app comes back. It is
             // only the writing that stops.
-            let target = suspended ? nil : decided
+            // Suspended is a choice the user made; not owning the fans is a fact about
+            // the machine. Either way this tick writes nothing.
+            let target = (suspended || !ownsTheFans) ? nil : decided
 
             // Whether we are actually in control is decided by the write, not by the
             // intention behind it.
@@ -248,7 +274,7 @@ final class Daemon {
                 if let target {
                     try hardware.setTarget(fan.index, rpm: target)
                     applied = true
-                } else {
+                } else if ownsTheFans {
                     try hardware.release(fan.index)
                 }
             } catch {
