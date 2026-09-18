@@ -102,31 +102,42 @@ final class FanHardware {
     /// achieve exactly what thirteen a second apart do, and the control loop has a
     /// watchdog that would fire long before a blocking retry finished.
     private func takeManualMode(_ index: Int) throws {
+        // The key, not the call. A write to F<n>Md that returns 0x82 has not
+        // necessarily failed to do anything: the SMC refuses the write when the mode
+        // is already 1, so re-asserting a mode we are holding came back as a refusal
+        // and the daemon concluded it had never got control. It then never wrote a
+        // target, and two fans it *was* holding sat at zero while the interface said
+        // it was still taking them. Same lesson as the target, one key along: believe
+        // what the controller reads back, not what the call returned.
+        if manualModeHeld(index) { unlockDeadline = nil; return }
+
         do {
             try smc.write("F\(index)Md", value: 1)
-            unlockDeadline = nil
-            return
         } catch let error as SMCDevice.Failure {
             guard case .rejected(_, let status) = error, status == 0x82, hasTestKey else { throw error }
         }
+        if manualModeHeld(index) { unlockDeadline = nil; return }
 
-        // Refused, and this Mac has the key that asks the thermal manager to let go.
+        // Really refused, and this Mac has the key that asks the thermal manager to
+        // let go.
         if unlockDeadline == nil {
             try? smc.write("Ftst", value: 1)
+            raisedTestKey = true
             unlockDeadline = Date().addingTimeInterval(Self.unlockTimeout)
         }
-        do {
-            try smc.write("F\(index)Md", value: 1)
-            unlockDeadline = nil
-        } catch {
-            if let deadline = unlockDeadline, Date() > deadline {
-                // It is not coming. Put the machine's own management back rather than
-                // leaving it switched off while we wait for something that will not happen.
-                releaseTestKey()
-            }
-            throw error
+        try? smc.write("F\(index)Md", value: 1)
+        if manualModeHeld(index) { unlockDeadline = nil; return }
+
+        if let deadline = unlockDeadline, Date() > deadline {
+            // It is not coming. Put the machine's own management back rather than
+            // leaving it switched off while we wait for something that will not happen.
+            releaseTestKey()
         }
+        throw SMCDevice.Failure.rejected(key: "F\(index)Md", status: 0x82)
     }
+
+    /// Manual mode, as the controller has it rather than as we asked for it.
+    private func manualModeHeld(_ index: Int) -> Bool { rawMode(index) == 1 }
 
     /// How long to wait for the thermal manager after `Ftst` goes up. Generous against
     /// the 13 seconds measured, because the cost of waiting is a fan that has not sped
@@ -140,16 +151,37 @@ final class FanHardware {
     /// behaviour is what it always was.
     private lazy var hasTestKey = smc.read("Ftst") != nil
 
-    /// Hands the machine's own thermal management back.
+    /// Whether the key standing raised is ours.
+    private var raisedTestKey = false
+
+    /// Hands the machine's own thermal management back - ours, and only ours.
     ///
     /// Called on every path that stops holding a fan, because `Ftst` left raised is
-    /// the Mac's automatic cooling left switched off - which is a far worse thing to
+    /// the Mac's automatic cooling left switched off, which is a far worse thing to
     /// leave behind than a fan stuck at one speed.
+    ///
+    /// Only if we raised it, though. This runs on every tick a fan is not held, and a
+    /// daemon sitting in System mode was therefore clearing the key once a second -
+    /// including a key raised by something else entirely, which is how it stopped a
+    /// diagnostic running beside it from ever taking a fan. Clearing what another
+    /// process is relying on is not this one's business; clearing what is left over
+    /// from a dead one is, and that is `clearForeignForcedState` at startup.
     func releaseTestKey() {
         unlockDeadline = nil
-        guard hasTestKey else { return }
+        guard hasTestKey, raisedTestKey else { return }
+        raisedTestKey = false
         guard (smc.read("Ftst")?.value ?? 0) != 0 else { return }
         try? smc.write("Ftst", value: 0)
+    }
+
+    /// Drops the key whoever raised it. Startup only: at that point anything raised is
+    /// either a previous run of this daemon that was killed, or a tool long gone, and
+    /// in both cases the machine is cooling itself by nobody's rules.
+    func clearAnyTestKey() {
+        guard hasTestKey, (smc.read("Ftst")?.value ?? 0) != 0 else { return }
+        try? smc.write("Ftst", value: 0)
+        raisedTestKey = false
+        unlockDeadline = nil
     }
 
     /// Rounding in the SMC's own float, not a licence for it to pick another speed.
@@ -180,7 +212,7 @@ final class FanHardware {
         // Including the test key, which a previous run that was killed rather than
         // asked to stop would have left raised - and with it the Mac's automatic
         // cooling switched off until something turned it back on.
-        releaseTestKey()
+        clearAnyTestKey()
         var found: [Int: Double] = [:]
         for fan in fans {
             guard let mode = rawMode(fan.index), mode != 0 else { continue }

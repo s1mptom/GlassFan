@@ -152,9 +152,21 @@ struct CurveEditor: View {
                 .onHover { inside in
                     if inside { hovered = index } else if hovered == index { hovered = nil }
                 }
+                // Removing sits here for the same reason, and before the drag besides.
+                // The drag used to begin at zero distance, so it recognised on
+                // mouse-down and swallowed the click before any tap could form: double
+                // -clicking a handle never removed it, and the editor's own
+                // double-click added a point on top of the one being aimed at. Two
+                // points of travel is still nothing to the hand and leaves a stationary
+                // click alone.
+                .onTapGesture(count: 2) {
+                    curve.removePoint(at: index)
+                    hovered = nil
+                    onCommit()
+                }
                 .position(position(point, in: plot))
                 .gesture(
-                    DragGesture(minimumDistance: 0)
+                    DragGesture(minimumDistance: 2)
                         .onChanged { value in
                             let current = dragging ?? index
                             let moved = self.point(from: value.location, in: plot)
@@ -169,11 +181,6 @@ struct CurveEditor: View {
                             onCommit()
                         }
                 )
-                .onTapGesture(count: 2) {
-                    curve.removePoint(at: index)
-                    hovered = nil
-                    onCommit()
-                }
                 .accessibilityLabel(L10n.t("Точка кривой", "Curve point"))
                 .accessibilityValue(L10n.t("\(Int(point.temperature)) градусов, \(Int(point.rpm)) оборотов в минуту",
                                            "\(Int(point.temperature)) degrees, \(Int(point.rpm)) rpm"))
