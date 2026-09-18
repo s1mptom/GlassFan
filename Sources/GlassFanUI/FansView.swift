@@ -334,6 +334,7 @@ struct FansView: View {
                     limits: fan.limits,
                     currentTemp: fan.drivingTemp,
                     currentRPM: fan.actualRPM,
+                    learnedFloor: fan.learnedFloor,
                     onCommit: { client.commit() }
                 )
                 .padding(16)

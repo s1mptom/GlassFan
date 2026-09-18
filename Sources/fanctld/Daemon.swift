@@ -3,7 +3,7 @@ import FanKit
 
 /// Owns the control loop: read sensors, decide, write fans, publish.
 final class Daemon {
-    static let version = "0.1.11"
+    static let version = "0.1.12"
     /// Overridable so the daemon can be run from a build directory during development,
     /// where /var/run is not writable and fan writes are expected to fail.
     static var socketPath = ProcessInfo.processInfo.environment["GLASSFAN_SOCKET"]
@@ -42,6 +42,11 @@ final class Daemon {
     private var suspended = false
     /// Whether this daemon is the one that writes to the fans. A second daemon on the
     /// same machine reads, serves and records, and keeps its hands off the hardware.
+    /// What each fan has been seen refusing to go below, learned from the readings the
+    /// control loop takes anyway - no calibration, and nothing spun up on purpose.
+    private var floors: [Int: FanFloor] = [:]
+    private var lastFloorSave = Date()
+    private var floorsChanged = false
     private let ownership = FanOwnership()
     private var ownsTheFans = true
     private var lastAffinityCheck = Date.distantPast
@@ -142,6 +147,7 @@ final class Daemon {
         temperatureKeys = readings.map(\.key).sorted()
         zoneTargetKeys = smc.zoneTargets().map { (zone: $0.zone, key: $0.key) }
         sensorEngines = Self.loadEngines()
+        floors = Self.loadFloors()
         // Names for the parts no table covers are read off this machine's own
         // layout, so the catalogue has to be told what this machine reports.
         SensorCatalog.configure(readings.map { SensorReading(key: $0.key, value: $0.value) },
@@ -193,6 +199,50 @@ final class Daemon {
     private struct LearnedEngines: Codable {
         var machine: String
         var engines: [String: Engine]
+    }
+
+    // MARK: What the fans turned out to be capable of
+
+    static var floorsPath: String {
+        (configPath as NSString).deletingLastPathComponent + "/fans.json"
+    }
+
+    private struct LearnedFloors: Codable {
+        var machine: String
+        var floors: [String: FanFloor]
+    }
+
+    /// Tied to the machine, like the engines: a floor belongs to a particular fan in a
+    /// particular chassis, and a config copied to another Mac would carry a number
+    /// measured on this one's hardware.
+    private static func loadFloors() -> [Int: FanFloor] {
+        guard let data = FileManager.default.contents(atPath: floorsPath),
+              let saved = try? JSONDecoder().decode(LearnedFloors.self, from: data),
+              saved.machine == machineIdentity
+        else { return [:] }
+        var result: [Int: FanFloor] = [:]
+        for (key, floor) in saved.floors {
+            if let index = Int(key) { result[index] = floor }
+        }
+        let known = result.values.filter(\.isKnown).compactMap(\.learned)
+        if !known.isEmpty {
+            Log.info("fan floors restored: " + known.map { String(format: "%.0f rpm", $0) }
+                                                    .joined(separator: ", "))
+        }
+        return result
+    }
+
+    private static func saveFloors(_ floors: [Int: FanFloor]) {
+        let directory = (floorsPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let keyed = Dictionary(uniqueKeysWithValues: floors.map { (String($0.key), $0.value) })
+        guard let data = try? JSONEncoder().encode(
+            LearnedFloors(machine: machineIdentity, floors: keyed)) else { return }
+        try? data.write(to: URL(fileURLWithPath: floorsPath), options: .atomic)
+        for (index, floor) in floors.sorted(by: { $0.key < $1.key }) where floor.isKnown {
+            Log.info(String(format: "fan %d will not go below %.0f rpm, whatever it is asked",
+                            index, floor.learned ?? 0))
+        }
     }
 
     private static func loadEngines() -> [String: Engine] {
@@ -298,6 +348,16 @@ final class Daemon {
             }
             lastWriteError[fan.index] = writeError
 
+            // Learned from this tick before it is reported, so the answer is never a
+            // reading older than the one beside it.
+            let measured = hardware.actualRPM(fan.index) ?? 0
+            var floor = floors[fan.index] ?? FanFloor()
+            let wasKnown = floor.isKnown
+            floor.observe(target: hardware.targetRPM(fan.index) ?? .infinity,
+                          actual: measured, held: applied)
+            floors[fan.index] = floor
+            if floor.isKnown != wasKnown { floorsChanged = true }
+
             readings.append(FanReading(
                 index: fan.index,
                 actualRPM: hardware.actualRPM(fan.index) ?? 0,
@@ -312,8 +372,18 @@ final class Daemon {
                 emergency: controller.isEmergency,
                 writeError: writeError,
                 writeFailure: writeFailure,
-                acquiring: acquiring
+                acquiring: acquiring,
+                learnedFloor: floor.isKnown ? floor.learned : nil
             ))
+        }
+
+        // Written when a fan first gives up its answer, and at most every five minutes
+        // after that: what is learned here is a handful of numbers that change rarely,
+        // and a control loop is no place to be writing files.
+        if floorsChanged || Date().timeIntervalSince(lastFloorSave) > 300 {
+            if floorsChanged { Self.saveFloors(floors) }
+            floorsChanged = false
+            lastFloorSave = Date()
         }
 
         let targets = zoneTargetKeys.compactMap { zone, key in

@@ -40,6 +40,10 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
     public var writeError: String?
     /// Absent from a daemon older than this field; `writeError` is then all there is.
     public var writeFailure: FanWriteFailure?
+    /// The slowest this fan has been seen actually turning, once that has been watched
+    /// often enough to believe. Absent until then, and on a fan never asked for less
+    /// than it will do. See `FanFloor`.
+    public var learnedFloor: Double?
     /// Taking the fan from the system, which on M3 and later is not instant: the
     /// thermal manager has to let go first, and that runs five to thirteen seconds.
     /// Not a failure and not yet a success, and it has to be told from both - reported
@@ -49,7 +53,7 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
     public init(index: Int, actualRPM: Double, targetRPM: Double, limits: FanLimits,
                 mode: FanMode, forced: Bool, drivingTemp: Double?, emergency: Bool,
                 writeError: String? = nil, writeFailure: FanWriteFailure? = nil,
-                acquiring: Bool = false) {
+                acquiring: Bool = false, learnedFloor: Double? = nil) {
         self.index = index
         self.actualRPM = actualRPM
         self.targetRPM = targetRPM
@@ -61,6 +65,7 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
         self.writeError = writeError
         self.writeFailure = writeFailure
         self.acquiring = acquiring ? true : nil
+        self.learnedFloor = learnedFloor
     }
 
     public var id: Int { index }

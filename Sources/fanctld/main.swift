@@ -67,20 +67,50 @@ if CommandLine.arguments.contains("--stop-test") {
 /// targets for a while, samples the actual rpm every second, and reports the
 /// spread and every stop and restart seen. Releases the fan afterwards.
 if CommandLine.arguments.contains("--stall-test") {
+    guard getuid() == 0 else { print("--stall-test needs root"); exit(1) }
     do {
         let smc = try SMCDevice()
         let hardware = FanHardware(smc: smc)
+        if let mode = smc.read("F0Md")?.value, mode == 1 {
+            print("F0Md is 1: something already holds the fans (the daemon, in Fixed or Curve).")
+            print("Set both fans to System in GlassFan and run this again.")
+            exit(0)
+        }
+
+        // Ctrl-C used to leave the fans wherever this had put them - which, for a test
+        // whose whole subject is holding them below the speed the SMC admits to, is a
+        // fan pinned under its own minimum by a process that no longer exists.
+        let stop = ManagedAtomicFlag()
+        let restoreLock = NSLock()
+        var restored = false
+        func handBack() {
+            restoreLock.lock(); defer { restoreLock.unlock() }
+            guard !restored else { return }
+            restored = true
+            hardware.releaseAll()
+            print(String(format: "restored: F0Md %.0f, Ftst %.0f",
+                         smc.read("F0Md")?.value ?? -1, smc.read("Ftst")?.value ?? -1))
+            fflush(stdout)
+        }
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: minimumTestSignalQueue)
+            source.setEventHandler { stop.raise() }
+            source.resume()
+            minimumTestSignals.append(source)
+        }
+
         let hold = 40
         for fan in hardware.fans {
             let i = fan.index
             print(String(format: "fan %d (SMC minimum %.0f)", i, fan.limits.minRPM))
-            defer { try? hardware.release(i) }
             for target in [1300.0, 1000.0, 600.0] {
                 try hardware.setTarget(i, rpm: target)
                 var samples: [Double] = []
                 var stops = 0, restarts = 0
                 var wasRunning = false
                 for _ in 0..<hold {
+                    if stop.isRaised { print("interrupted"); handBack(); exit(1) }
                     Thread.sleep(forTimeInterval: 1)
                     let rpm = hardware.actualRPM(i) ?? -1
                     samples.append(rpm)
@@ -100,6 +130,7 @@ if CommandLine.arguments.contains("--stall-test") {
                 fflush(stdout)
             }
         }
+        handBack()
     } catch {
         print("stall-test failed: \(error)")
         exit(1)

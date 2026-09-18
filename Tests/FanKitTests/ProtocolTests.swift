@@ -142,3 +142,27 @@ struct ProtocolCompatibilityTests {
         }
     }
 }
+
+extension ProtocolCompatibilityTests {
+    @Test("a learned floor survives the wire, and its absence is not a zero")
+    func learnedFloorSurvives() throws {
+        let known = FanReading(index: 0, actualRPM: 968, targetRPM: 446,
+                               limits: FanLimits(minRPM: 1350, maxRPM: 5349),
+                               mode: .curve, forced: true, drivingTemp: 31, emergency: false,
+                               learnedFloor: 968)
+        let data = try NDJSONEncoder.encode(DaemonMessage.snapshot(
+            Snapshot(time: 0, sensors: [], fans: [known], config: .default(fanCount: 1),
+                     daemonVersion: "test")))
+        var buffer = NDJSONDecoderBuffer()
+        guard case .snapshot(let snapshot)? = try buffer.append(data, as: DaemonMessage.self).first
+        else { Issue.record("not a snapshot"); return }
+        #expect(snapshot.fans[0].learnedFloor == 968)
+
+        // Not yet learned is nil, not 0 - a floor of zero would be a fan that stops,
+        // which is a claim, and the editor would draw a line along the bottom for it.
+        let unknown = FanReading(index: 0, actualRPM: 0, targetRPM: 0,
+                                 limits: FanLimits(minRPM: 1350, maxRPM: 5349),
+                                 mode: .auto, forced: false, drivingTemp: nil, emergency: false)
+        #expect(unknown.learnedFloor == nil)
+    }
+}
