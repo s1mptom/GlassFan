@@ -92,6 +92,27 @@ final class SMCDevice {
         }.sorted { $0.zone < $1.zone }
     }
 
+    /// Writes `value` and makes sure it arrived, retrying for a moment if not.
+    ///
+    /// A single write followed by a single read is not enough on this controller: the
+    /// value can land a fraction of a second after the call returns, so a read taken
+    /// straight afterwards shows the old one. A restore that checked that way reported
+    /// it had failed to hand the fans back while it was in fact handing them back -
+    /// alarming, and on the key that switches the machine's own thermal management
+    /// off, the most frightening possible thing to be wrong about.
+    ///
+    /// Retries rather than a fixed sleep: on the ordinary path the first read is right
+    /// and this costs nothing.
+    @discardableResult
+    func writeAndVerify(_ key: String, value: Double, attempts: Int = 20) -> Bool {
+        for attempt in 0..<attempts {
+            try? write(key, value: value)
+            if let back = read(key)?.value, abs(back - value) <= 0.5 { return true }
+            if attempt < attempts - 1 { Thread.sleep(forTimeInterval: 0.1) }
+        }
+        return false
+    }
+
     func allKeys() -> [String] {
         var count: UInt32 = 0
         guard smc_key_count(&count) == SMC_OK else { return [] }

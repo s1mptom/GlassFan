@@ -171,17 +171,21 @@ final class FanHardware {
         guard hasTestKey, raisedTestKey else { return }
         raisedTestKey = false
         guard (smc.read("Ftst")?.value ?? 0) != 0 else { return }
-        try? smc.write("Ftst", value: 0)
+        if !smc.writeAndVerify("Ftst", value: 0) {
+            Log.error("Ftst is still raised: the Mac's own thermal management is off")
+        }
     }
 
     /// Drops the key whoever raised it. Startup only: at that point anything raised is
     /// either a previous run of this daemon that was killed, or a tool long gone, and
     /// in both cases the machine is cooling itself by nobody's rules.
     func clearAnyTestKey() {
-        guard hasTestKey, (smc.read("Ftst")?.value ?? 0) != 0 else { return }
-        try? smc.write("Ftst", value: 0)
         raisedTestKey = false
         unlockDeadline = nil
+        guard hasTestKey, (smc.read("Ftst")?.value ?? 0) != 0 else { return }
+        if !smc.writeAndVerify("Ftst", value: 0) {
+            Log.error("Ftst is still raised: the Mac's own thermal management is off")
+        }
     }
 
     /// Rounding in the SMC's own float, not a licence for it to pick another speed.
@@ -200,9 +204,17 @@ final class FanHardware {
     func release(_ index: Int) throws {
         defer { if owned.isEmpty { releaseTestKey() } }
         guard owned.contains(index) else { return }
-        try smc.write("F\(index)Md", value: 0)
+        // Verified, because handing a fan back is the half of this that must not fail
+        // quietly. The mode key can take a moment to settle, and the system writes into
+        // it too, so a single write and an immediate read disagree often enough to
+        // matter. Ownership is dropped either way: we are not holding it any more, and
+        // claiming otherwise would stop the next release from trying again.
         owned.remove(index)
         sinceAssert[index] = nil
+        guard smc.writeAndVerify("F\(index)Md", value: 0) else {
+            throw SMCDevice.Failure.ignored(key: "F\(index)Md", asked: 0,
+                                            kept: rawMode(index) ?? .nan)
+        }
     }
 
     /// Clears any forced state left behind by whoever ran before us - a previous run of
