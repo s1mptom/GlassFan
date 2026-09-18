@@ -6,15 +6,24 @@ import Foundation
 /// policy is testable without touching hardware. Returning nil means "release this
 /// fan back to the system".
 public struct FanController {
-    public var settings: FanSettings
+    public var settings: FanSettings {
+        didSet {
+            // Holds are kept by curve number. Remove a curve and the ones after it move
+            // up a place; a hold carried over would be another group's temperature.
+            if oldValue.curves.map(\.sensorKeys) != settings.curves.map(\.sensorKeys) { heldTemps = [:] }
+        }
+    }
     public var limits: FanLimits
 
-    /// Temperature that produced the target currently in force, for hysteresis.
-    private var heldTemp: Double?
+    /// Per curve: the temperature that produced the demand it is holding, for hysteresis.
+    /// Per curve because a cooling group must not drag another group's hold down with it.
+    private var heldTemps: [Int: Double] = [:]
     /// Last target handed out, for smoothing.
     private var lastTarget: Double?
 
     public private(set) var lastDrivingTemp: Double?
+    /// Which curve set the last target, while following curves.
+    public private(set) var lastDrivingCurve: Int?
     public private(set) var isEmergency = false
 
     public init(settings: FanSettings, limits: FanLimits) {
@@ -23,7 +32,8 @@ public struct FanController {
     }
 
     public mutating func reset() {
-        heldTemp = nil
+        heldTemps = [:]
+        lastDrivingCurve = nil
         lastTarget = nil
         isEmergency = false
     }
@@ -33,60 +43,81 @@ public struct FanController {
 
         switch settings.mode {
         case .auto:
-            heldTemp = nil
+            heldTemps = [:]
             lastTarget = nil
             lastDrivingTemp = assignedMax(temperatures)
+            lastDrivingCurve = nil
             return nil
 
         case .fixed:
             lastDrivingTemp = assignedMax(temperatures)
+            lastDrivingCurve = nil
             let target = limits.clamp(settings.fixedRPM)
             lastTarget = target
             return target
 
         case .curve:
-            guard let hottest = assignedMax(temperatures) else {
+            let temps = settings.curves.map { hottest(of: $0.sensorKeys, in: temperatures) }
+            guard let hottestAnywhere = temps.compactMap({ $0 }).max() else {
                 // Nothing to steer by - safer to let the system have the fan back.
-                heldTemp = nil
+                heldTemps = [:]
                 lastTarget = nil
                 lastDrivingTemp = nil
+                lastDrivingCurve = nil
                 return nil
             }
-            lastDrivingTemp = hottest
 
-            if hottest >= emergencyTemp {
+            if hottestAnywhere >= emergencyTemp {
                 isEmergency = true
-                heldTemp = hottest
+                let index = temps.firstIndex { $0 == hottestAnywhere }!
+                heldTemps[index] = hottestAnywhere
+                lastDrivingCurve = index
+                lastDrivingTemp = hottestAnywhere
                 lastTarget = limits.maxRPM
                 return limits.maxRPM
             }
 
-            let effective = applyHysteresis(to: hottest)
-            guard let demand = settings.curves[0].curve.rpm(at: effective) else {
-                heldTemp = nil
+            // Each curve asks for a speed; the fan runs at the fastest. A tie goes to
+            // the earlier curve, so the one reported does not flicker between equals.
+            var winner: (index: Int, demand: Double)?
+            for (index, rule) in settings.curves.enumerated() {
+                guard let temp = temps[index] else { heldTemps[index] = nil; continue }
+                let effective = applyHysteresis(to: temp, curve: index)
+                guard let demand = rule.curve.rpm(at: effective) else { continue }
+                if winner.map({ demand > $0.demand }) ?? true { winner = (index, demand) }
+            }
+            guard let winner else {
+                heldTemps = [:]
                 lastTarget = nil
+                lastDrivingTemp = nil
+                lastDrivingCurve = nil
                 return nil
             }
+            lastDrivingCurve = winner.index
+            lastDrivingTemp = temps[winner.index]
 
-            let clamped = limits.clamp(demand)
-            let target = applySmoothing(to: clamped)
+            let target = applySmoothing(to: limits.clamp(winner.demand))
             lastTarget = target
             return target
         }
     }
 
+    private func hottest(of keys: [String], in temperatures: [String: Double]) -> Double? {
+        keys.compactMap { temperatures[$0] }.max()
+    }
+
     private func assignedMax(_ temperatures: [String: Double]) -> Double? {
-        settings.allSensorKeys.compactMap { temperatures[$0] }.max()
+        hottest(of: settings.allSensorKeys, in: temperatures)
     }
 
     /// Rises follow the temperature at once; falls wait until it has dropped past the band.
-    private mutating func applyHysteresis(to temp: Double) -> Double {
-        guard let held = heldTemp else {
-            heldTemp = temp
+    private mutating func applyHysteresis(to temp: Double, curve: Int) -> Double {
+        guard let held = heldTemps[curve] else {
+            heldTemps[curve] = temp
             return temp
         }
         if temp > held || held - temp >= settings.hysteresis {
-            heldTemp = temp
+            heldTemps[curve] = temp
             return temp
         }
         return held

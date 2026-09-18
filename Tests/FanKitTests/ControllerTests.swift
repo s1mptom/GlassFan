@@ -124,4 +124,67 @@ struct ControllerTests {
         _ = c.update(temperatures: ["TCMz": 40], emergencyTemp: 95)
         #expect(c.update(temperatures: ["TCMz": 97], emergencyTemp: 95) == 5348)
     }
+
+    /// Palm rests on a gentle ramp, the CPU on a steep one.
+    func twoCurves(hysteresis: Double = 0) -> FanSettings {
+        FanSettings(id: 0, mode: .curve, fixedRPM: 3000, curves: [
+            CurveRule(sensorKeys: ["Ts0P"], curve: FanCurve(points: [
+                CurvePoint(temperature: 30, rpm: 0), CurvePoint(temperature: 40, rpm: 2000)])),
+            CurveRule(sensorKeys: ["TCMz"], curve: FanCurve(points: [
+                CurvePoint(temperature: 60, rpm: 2500), CurvePoint(temperature: 85, rpm: 5000)])),
+        ], hysteresis: hysteresis, smoothing: 0)
+    }
+
+    @Test("the fan runs at the fastest of its curves, and says which")
+    func fastestCurveWins() {
+        var c = FanController(settings: twoCurves(), limits: limits)
+        // Palm rest 33 -> 600 rpm; CPU 72 -> 3700 rpm.
+        #expect(c.update(temperatures: ["Ts0P": 33, "TCMz": 72], emergencyTemp: 95) == 3700)
+        #expect(c.lastDrivingCurve == 1)
+        #expect(c.lastDrivingTemp == 72)
+        // CPU idle: 45 is below its first point, so it asks 2500; the palm rests at 40 ask 2000.
+        #expect(c.update(temperatures: ["Ts0P": 40, "TCMz": 45], emergencyTemp: 95) == 2500)
+        #expect(c.lastDrivingCurve == 1)
+    }
+
+    @Test("a curve with nothing to read sits out")
+    func unreadableCurveSitsOut() {
+        var c = FanController(settings: twoCurves(), limits: limits)
+        #expect(c.update(temperatures: ["Ts0P": 35], emergencyTemp: 95) == 1000)
+        #expect(c.lastDrivingCurve == 0)
+    }
+
+    @Test("each curve holds its own temperature against hysteresis")
+    func hysteresisPerCurve() {
+        let flat = FanCurve(points: [CurvePoint(temperature: 40, rpm: 1000), CurvePoint(temperature: 80, rpm: 5000)])
+        let settings = FanSettings(id: 0, mode: .curve, fixedRPM: 0, curves: [
+            CurveRule(sensorKeys: ["a"], curve: flat), CurveRule(sensorKeys: ["b"], curve: flat),
+        ], hysteresis: 2, smoothing: 0)
+        var c = FanController(settings: settings, limits: limits)
+        #expect(c.update(temperatures: ["a": 60, "b": 50], emergencyTemp: 95) == 3000)
+        // a falls well past its band (-> 40, 1000 rpm); b slips within its own and is held at 50 (2000 rpm).
+        #expect(c.update(temperatures: ["a": 40, "b": 49], emergencyTemp: 95) == 2000)
+        #expect(c.lastDrivingCurve == 1)
+    }
+
+    @Test("any sensor in any group past the emergency point sends the fan to full")
+    func emergencyFromAnyGroup() {
+        var c = FanController(settings: twoCurves(), limits: limits)
+        #expect(c.update(temperatures: ["Ts0P": 97, "TCMz": 50], emergencyTemp: 95) == limits.maxRPM)
+        #expect(c.isEmergency)
+        #expect(c.lastDrivingCurve == 0)
+    }
+
+    @Test("removing a curve does not leave its hold on the curve that moves into its place")
+    func holdsFollowTheirGroups() {
+        let flat = FanCurve(points: [CurvePoint(temperature: 40, rpm: 1000), CurvePoint(temperature: 80, rpm: 5000)])
+        var c = FanController(settings: FanSettings(id: 0, mode: .curve, fixedRPM: 0, curves: [
+            CurveRule(sensorKeys: ["a"], curve: flat), CurveRule(sensorKeys: ["b"], curve: flat),
+        ], hysteresis: 20, smoothing: 0), limits: limits)
+        _ = c.update(temperatures: ["a": 65, "b": 50], emergencyTemp: 95)
+        c.settings.curves.remove(at: 0)
+        // b alone at 49: its own reading. With a's 65 held over, inside the 20-degree
+        // band, it would have asked for 3500.
+        #expect(c.update(temperatures: ["a": 65, "b": 49], emergencyTemp: 95) == 1900)
+    }
 }

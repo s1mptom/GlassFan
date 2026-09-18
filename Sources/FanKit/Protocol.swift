@@ -49,11 +49,14 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
     /// Not a failure and not yet a success, and it has to be told from both - reported
     /// as "write refused" it reads as something broken that the user should go and fix.
     public var acquiring: Bool?
+    /// Which of the fan's curves set the target, when it is following curves. Absent
+    /// from a daemon older than grouped curves.
+    public var drivingCurve: Int?
 
     public init(index: Int, actualRPM: Double, targetRPM: Double, limits: FanLimits,
                 mode: FanMode, forced: Bool, drivingTemp: Double?, emergency: Bool,
                 writeError: String? = nil, writeFailure: FanWriteFailure? = nil,
-                acquiring: Bool = false, learnedFloor: Double? = nil) {
+                acquiring: Bool = false, learnedFloor: Double? = nil, drivingCurve: Int? = nil) {
         self.index = index
         self.actualRPM = actualRPM
         self.targetRPM = targetRPM
@@ -66,6 +69,7 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
         self.writeFailure = writeFailure
         self.acquiring = acquiring ? true : nil
         self.learnedFloor = learnedFloor
+        self.drivingCurve = drivingCurve
     }
 
     public var id: Int { index }

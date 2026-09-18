@@ -165,4 +165,15 @@ extension ProtocolCompatibilityTests {
                                  mode: .auto, forced: false, drivingTemp: nil, emergency: false)
         #expect(unknown.learnedFloor == nil)
     }
+
+    @Test("which curve is driving survives the wire, and is absent from an older daemon")
+    func drivingCurve() throws {
+        let reading = FanReading(index: 0, actualRPM: 2000, targetRPM: 2000,
+                                 limits: FanLimits(minRPM: 1499, maxRPM: 5348), mode: .curve,
+                                 forced: true, drivingTemp: 72, emergency: false, drivingCurve: 1)
+        let data = try JSONEncoder().encode(reading)
+        #expect(try JSONDecoder().decode(FanReading.self, from: data).drivingCurve == 1)
+        let old = #"{"index":0,"actualRPM":0,"targetRPM":0,"limits":{"minRPM":0,"maxRPM":1},"mode":"curve","forced":false,"emergency":false}"#
+        #expect(try JSONDecoder().decode(FanReading.self, from: Data(old.utf8)).drivingCurve == nil)
+    }
 }
