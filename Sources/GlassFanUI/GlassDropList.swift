@@ -136,11 +136,11 @@ struct GlassDropList<Row: View>: View {
     private func land(on index: Int, token: Int) {
         let drop = self.drop
         guard drop.token == token, !drop.pressing else { return }
-        if index != selection, index < count { selection = index }
+        if index != selection, index < count { withoutImplicitAnimation { selection = index } }
         drop.lift.tune(response: 0.36, dampingFraction: 0.9)
         drop.lift.target = 0
         drop.onSettled = {
-            if drop.token == token, !drop.pressing { drop.engaged = false }
+            if drop.token == token, !drop.pressing { withoutImplicitAnimation { drop.engaged = false } }
         }
     }
 }

@@ -41,6 +41,20 @@ struct LensSpring {
     }
 }
 
+/// Runs `change` with implicit animations off.
+///
+/// The resting platter slides between choices by an implicit animation keyed on the
+/// choice, so a choice made from the keyboard or the menu bar glides. A drop makes
+/// its choice while in the air and then settles into the platter where it landed;
+/// with that animation still armed, the platter came back at the old choice and slid
+/// over a moment after the drop had visibly settled. The drop's own choice and its
+/// settling are made with implicit animations off.
+func withoutImplicitAnimation(_ change: () -> Void) {
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction, change)
+}
+
 /// Hands out one step of time per display frame, however many views ask for it.
 ///
 /// A drop is drawn by three views - the glass under the content, the refraction, the

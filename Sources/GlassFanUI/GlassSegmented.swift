@@ -200,11 +200,13 @@ struct GlassSegmented<Value: Hashable>: View {
     private func land(on index: Int, token: Int) {
         let lens = self.lens
         guard lens.token == token, !lens.pressing else { return }
-        if items[index].value != selection { selection = items[index].value }
+        if items[index].value != selection {
+            withoutImplicitAnimation { selection = items[index].value }
+        }
         lens.lift.tune(response: 0.36, dampingFraction: 0.9)
         lens.lift.target = 0
         lens.onSettled = {
-            if lens.token == token, !lens.pressing { lens.engaged = false }
+            if lens.token == token, !lens.pressing { withoutImplicitAnimation { lens.engaged = false } }
         }
     }
 
