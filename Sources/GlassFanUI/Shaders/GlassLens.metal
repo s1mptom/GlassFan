@@ -40,14 +40,20 @@ static float smoothMin(float a, float b, float k) {
 /// radius of half the height and no neck, it is a capsule.
 static float dropDist(float2 p, float4 head, float4 tail, float radius, float neck) {
     float d = roundBox(p, head, radius);
-    if (any(head != tail)) {
-        // Melted over a good part of its own thickness, so the join reads as liquid
-        // pulled between two places rather than two pills touching.
-        float k = max(8.0, 0.45 * min(min(head.z, head.w), min(tail.z, tail.w)));
-        d = smoothMin(d, roundBox(p, tail, radius), k);
-        if (neck > 0.0) {
-            d = smoothMin(d, segmentDist(p, head.xy + head.zw * 0.5, tail.xy + tail.zw * 0.5) - neck, k);
-        }
+    float2 headCentre = head.xy + head.zw * 0.5, tailCentre = tail.xy + tail.zw * 0.5;
+    // Melted over a good part of its thickness once the ends are apart, so the join
+    // reads as liquid pulled between two places rather than two pills touching - but
+    // only as far as they are apart. A smooth minimum of two nearly equal distances
+    // comes out a quarter of its width *less* than either: with head and tail a point
+    // apart, the whole drop swelled ten points past the glass drawn under it, and its
+    // light ringed a row it should have sat on.
+    float k = min(0.45 * min(min(head.z, head.w), min(tail.z, tail.w)),
+                  0.6 * distance(headCentre, tailCentre));
+    float tailDist = roundBox(p, tail, radius);
+    d = k > 0.5 ? smoothMin(d, tailDist, k) : min(d, tailDist);
+    if (neck > 0.0) {
+        float bridge = segmentDist(p, headCentre, tailCentre) - neck;
+        d = k > 0.5 ? smoothMin(d, bridge, k) : min(d, bridge);
     }
     return d;
 }

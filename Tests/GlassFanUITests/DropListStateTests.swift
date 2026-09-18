@@ -40,7 +40,7 @@ struct DropListStateTests {
         #expect(abs(drop.headH.value - 32) < 1.5)
     }
 
-    @Test("held inside its row's stretch, the drop stays near the row's middle")
+    @Test("held inside its row's stretch, the drop stays on the row, leaning towards the pointer")
     func sticksWhileHeld() {
         let drop = DropListState()
         drop.engage(at: rows[0])

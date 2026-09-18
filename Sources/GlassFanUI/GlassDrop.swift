@@ -225,11 +225,13 @@ struct GlassDropLight: View {
         if geometry.isVisible {
             let drop = geometry.offsetBy(dx: margin, dy: margin)
             ZStack(alignment: .topLeading) {
-                Canvas { context, _ in
-                    context.translateBy(x: margin, y: margin)
-                    paint(in: &context)
+                if !DropScript.off.contains("canvas") {
+                    Canvas { context, _ in
+                        context.translateBy(x: margin, y: margin)
+                        paint(in: &context)
+                    }
                 }
-                if let library = LensShaders.library {
+                if let library = LensShaders.library, !DropScript.off.contains("shader") {
                     Rectangle()
                         .fill(.white)
                         .colorEffect(Shader(function: ShaderFunction(library: library, name: "glassLight"),
@@ -317,3 +319,27 @@ enum LensShaders {
         return Runtime.isPreview ? ShaderLibrary.bundle(.module) : nil
     }()
 }
+
+#if DEBUG
+/// The light over a drop of known size, that size outlined in red: they must agree.
+///
+/// Head and tail a point and a half apart, as they are the moment a drop is pressed.
+/// The shader's melt between them once swelled the whole drop ten points past this
+/// outline - the ring of light around a row it should have sat on.
+#Preview("Drop light alignment") {
+    let head = CGRect(x: 0, y: 0, width: 184, height: 96)
+    let tail = head.offsetBy(dx: 0, dy: 1.5)
+    ZStack(alignment: .topLeading) {
+        Color(red: 0.12, green: 0.14, blue: 0.19).frame(width: 184, height: 200)
+        RoundedRectangle(cornerRadius: 14).stroke(.red, lineWidth: 1)
+            .frame(width: head.width, height: head.height + 1.5)
+    }
+    .overlay(alignment: .topLeading) {
+        GlassDropLight(geometry: DropGeometry(head: head, tail: tail, cornerRadius: 14, lift: 1),
+                       pointer: CGPoint(x: head.midX, y: head.midY), size: CGSize(width: 184, height: 200))
+    }
+    .padding(30)
+    .background(Color(red: 0.12, green: 0.14, blue: 0.19))
+    .environment(\.colorScheme, .dark)
+}
+#endif

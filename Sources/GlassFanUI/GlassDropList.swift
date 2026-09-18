@@ -32,6 +32,9 @@ struct GlassDropList<Row: View>: View {
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(space)) } action: {
                             frames[index] = $0
                         }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            if DropScript.isEnabled { DropScript.rows[index] = $0 }
+                        }
                 }
             }
             .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
@@ -144,11 +147,15 @@ struct GlassDropList<Row: View>: View {
     private func land(on index: Int, token: Int) {
         let drop = self.drop
         guard drop.token == token, !drop.pressing else { return }
+        if DropScript.isEnabled { DropScript.log("land on \(index)") }
         if index != selection, index < count { withoutImplicitAnimation { selection = index } }
         drop.lift.tune(response: 0.36, dampingFraction: 0.9)
         drop.lift.target = 0
         drop.onSettled = {
-            if drop.token == token, !drop.pressing { withoutImplicitAnimation { drop.engaged = false } }
+            if drop.token == token, !drop.pressing {
+                if DropScript.isEnabled { DropScript.log("settled") }
+                withoutImplicitAnimation { drop.engaged = false }
+            }
         }
     }
 }
@@ -269,6 +276,12 @@ final class DropListState {
             lift.step(step.dt)
         }
 
+        if DropScript.isEnabled {
+            DropScript.log(String(format: "drop head %.1f %.0fx%.0f tail %.1f %.0fx%.0f lift %.2f held %@ target %d",
+                                  headY.value, headW.value, headH.value, tailY.value, tailW.value, tailH.value,
+                                  lift.value, held.map { String(format: "%.1f", $0) } ?? "-", target))
+        }
+
         // Handed to the next turn of the run loop: they change state, and this runs
         // while the drop's views are being drawn. Arrived once within a point and a
         // half: the rest of a spring's approach is too small to see.
@@ -295,7 +308,8 @@ private struct DropRefracted<Content: View>: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: nil, paused: !drop.engaged)) { context in
-            content.modifier(GlassDropRefraction(geometry: drop.engaged ? drop.geometry(at: context.date, rows: rows) : nil,
+            content.modifier(GlassDropRefraction(geometry: drop.engaged && !DropScript.off.contains("lens")
+                                                     ? drop.geometry(at: context.date, rows: rows) : nil,
                                                  reach: CGSize(width: 48, height: 48)))
         }
     }
@@ -316,7 +330,7 @@ private struct DropGlass: View {
     let selection: Int
 
     var body: some View {
-        if drop.engaged {
+        if drop.engaged, !DropScript.off.contains("glass") {
             TimelineView(.animation) { context in
                 let geometry = drop.geometry(at: context.date, rows: rows)
                 let lift = min(geometry.lift, 1)
@@ -396,9 +410,10 @@ private struct DropLight: View {
     let size: CGSize
 
     var body: some View {
-        if drop.engaged {
+        if drop.engaged, !DropScript.off.contains("light") {
             TimelineView(.animation) { context in
-                GlassDropLight(geometry: drop.geometry(at: context.date, rows: rows), pointer: drop.pointer, size: size)
+                let geometry = drop.geometry(at: context.date, rows: rows)
+                GlassDropLight(geometry: geometry, pointer: drop.pointer, size: size)
             }
         }
     }

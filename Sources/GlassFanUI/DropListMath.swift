@@ -13,23 +13,17 @@ enum DropListMath {
         return rows.count - 1
     }
 
-    /// Where a held drop sits for a pointer at `y`.
+    /// Where a held drop sits for a pointer at `y`: on the row whose stretch holds the
+    /// pointer, pulled a quarter of the way towards it.
     ///
-    /// It sticks to the row it is over: inside the row's stretch it lags the pointer
-    /// on a steep curve, so it barely leaves the row's middle until the pointer is
-    /// most of the way out - then it gives and runs to the edge, where the next row's
-    /// own curve takes it from the other side. The two curves meet at the boundary,
-    /// so the drop never jumps.
+    /// It always sits on a row. Following the pointer on a curve, it hung between two
+    /// rows wherever a hand paused near the middle of a gap - a row-sized drop over the
+    /// bottom of one and the top of the next, on neither. Now it leans towards the
+    /// pointer, so it is plainly being held, and when the pointer crosses the middle of
+    /// a gap it flows to the next row on its springs.
     static func stick(_ y: CGFloat, in rows: [CGRect]) -> CGFloat {
-        let index = owner(of: y, in: rows)
-        let row = rows[index]
-        let above = index > 0 ? (rows[index - 1].maxY + row.minY) / 2 : row.minY
-        let below = index < rows.count - 1 ? (row.maxY + rows[index + 1].minY) / 2 : row.maxY
-        let offset = y - row.midY
-        let reach = offset >= 0 ? below - row.midY : row.midY - above
-        guard reach > 0 else { return row.midY }
-        let t = min(abs(offset) / reach, 1)
-        return row.midY + (offset < 0 ? -1 : 1) * reach * t * t * t
+        let row = rows[owner(of: y, in: rows)]
+        return row.midY + (y - row.midY) * 0.25
     }
 
     /// 0 over a row, rising to 1 four points out into a gap.

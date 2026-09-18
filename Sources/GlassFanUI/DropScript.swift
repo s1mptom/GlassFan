@@ -1,0 +1,112 @@
+import AppKit
+import SwiftUI
+
+/// A scripted run of the curve-group drop in the real app, for looking at it frame by
+/// frame: clicks, then slow drags with pauses, as a hand makes them.
+///
+/// `GLASSFAN_DEMO=1 GLASSFAN_DROP_SCRIPT=1`, and `GLASSFAN_DEMO_CURVES=2` or `3`. Demo
+/// mode only, so it never talks to the daemon and cannot touch the fans. It opens the
+/// Fans screen, posts mouse events to its own window (the pointer does not move), logs
+/// every event and every frame of the drop to standard error, and quits.
+///
+/// A picture of one control in a window of its own did not show what the real screen
+/// did - the sidebar, its scroll view and the window's own glass all change how the
+/// drop looks - so this runs on the real thing.
+@MainActor
+enum DropScript {
+    static let isEnabled = DemoFixture.isEnabled
+        && ProcessInfo.processInfo.environment["GLASSFAN_DROP_SCRIPT"] == "1"
+
+    /// Layers switched off for a run, to tell which one draws what:
+    /// `GLASSFAN_DROP_OFF=light,glass,lens,frames`.
+    static let off: Set<String> = isEnabled
+        ? Set((ProcessInfo.processInfo.environment["GLASSFAN_DROP_OFF"] ?? "").split(separator: ",").map(String.init))
+        : []
+
+    /// The drop list's rows, in the window's content coordinates (top-left origin).
+    static var rows: [Int: CGRect] = [:]
+
+    private static let start = Date()
+
+    nonisolated static func log(_ line: String) {
+        let stamp = String(format: "%7.3f ", Date().timeIntervalSince(start))
+        FileHandle.standardError.write(Data((stamp + line + "\n").utf8))
+    }
+
+    static func begin() {
+        guard isEnabled else { return }
+        UserDefaults.standard.set("fans", forKey: Screen.storageKey)
+        UserDefaults.standard.set(0, forKey: FansView.selectedKey)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { run() }
+    }
+
+    private static var window: NSWindow? {
+        NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) }
+    }
+
+    private static func centre(_ index: Int) -> CGPoint? {
+        rows[index].map { CGPoint(x: $0.midX, y: $0.midY) }
+    }
+
+    private static func post(_ type: NSEvent.EventType, _ point: CGPoint) {
+        guard let window, let content = window.contentView else { return }
+        let location = NSPoint(x: point.x, y: content.bounds.height - point.y)
+        guard let event = NSEvent.mouseEvent(
+            with: type, location: location, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+        else { return }
+        NSApp.postEvent(event, atStart: false)
+    }
+
+    private static func run() {
+        guard let window, let first = centre(0), let second = centre(1) else {
+            log("no drop list on screen - is the fan in Curve mode with two curves?")
+            NSApp.terminate(nil)
+            return
+        }
+        let frame = window.frame
+        let screen = window.screen?.frame.height ?? 0
+        log("WINDOW \(Int(frame.minX)) \(Int(screen - frame.maxY)) \(Int(frame.width)) \(Int(frame.height))")
+        log("ROWS " + rows.sorted { $0.key < $1.key }
+            .map { "\($0.key):\(Int($0.value.minY))-\(Int($0.value.maxY))" }.joined(separator: " "))
+
+        var t = 0.5
+        func at(_ delay: Double, _ action: @escaping () -> Void) {
+            t += delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: action)
+        }
+        func click(_ point: CGPoint, _ name: String) {
+            at(0, { post(.leftMouseDown, point); log("click \(name)") })
+            at(0.02, { post(.leftMouseUp, point) })
+        }
+        /// Legs of (points down, seconds); a leg of 0 points is a pause.
+        func drag(from: CGPoint, legs: [(CGFloat, Double)], _ name: String) {
+            at(0, { post(.leftMouseDown, from); log("drag \(name): down at \(Int(from.y))") })
+            var y = from.y
+            for (distance, seconds) in legs {
+                let steps = max(Int(seconds * 60), 1)
+                for _ in 0..<steps {
+                    y += distance / CGFloat(steps)
+                    let point = CGPoint(x: from.x, y: y)
+                    at(seconds / Double(steps), { post(.leftMouseDragged, point) })
+                }
+                let reached = y
+                at(0, { log("drag \(name): at \(Int(reached))") })
+            }
+            let end = CGPoint(x: from.x, y: y)
+            at(0.05, { post(.leftMouseUp, end); log("drag \(name): up at \(Int(end.y))") })
+        }
+
+        click(second, "row 2")
+        at(1.6, {})
+        click(first, "row 1")
+        at(1.6, {})
+        let down = second.y - first.y
+        drag(from: first, legs: [(down * 0.2, 0.5), (0, 0.7), (down * 0.35, 0.8), (0, 0.7),
+                                 (down * 0.45, 0.8), (0, 0.8)], "down")
+        at(1.6, {})
+        drag(from: second, legs: [(-down * 0.5, 1.2), (0, 0.6), (-down * 0.5, 1.2), (0, 0.6)], "up")
+        at(2.0, { log("done"); NSApp.terminate(nil) })
+    }
+}

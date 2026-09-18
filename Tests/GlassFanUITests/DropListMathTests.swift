@@ -18,20 +18,17 @@ struct DropListMathTests {
         #expect(DropListMath.owner(of: -50, in: rows) == 0)
     }
 
-    @Test("held, the drop hangs back near its row's middle, then gives")
+    @Test("held, the drop stays on its row and leans a quarter of the way to the pointer")
     func sticks() {
         #expect(DropListMath.stick(30, in: rows) == 30)
-        // Halfway from the middle (30) to the edge of row 0's stretch (64): an eighth of the way.
-        #expect(abs(DropListMath.stick(47, in: rows) - 34.25) < 0.01)
-        // At the edge it has caught up with the pointer.
-        #expect(abs(DropListMath.stick(63.99, in: rows) - 63.99) < 0.1)
+        #expect(DropListMath.stick(47, in: rows) == 34.25)
+        #expect(DropListMath.stick(63.9, in: rows) < 40)       // never out over the gap
     }
 
-    @Test("passing from one row's pull to the next, the drop does not jump")
-    func continuous() {
-        let before = DropListMath.stick(63.999, in: rows)
-        let after = DropListMath.stick(64.001, in: rows)
-        #expect(abs(before - after) < 0.05)
+    @Test("past the middle of a gap the drop belongs to the next row")
+    func handedOver() {
+        #expect(DropListMath.stick(64, in: rows) == 79)        // row 2's middle (84), leaning up
+        #expect(DropListMath.stick(500, in: rows) > 124)       // the last row, leaning down
     }
 
     @Test("over a row there is no pinch; four points into a gap, full pinch")

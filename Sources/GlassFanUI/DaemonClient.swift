@@ -63,10 +63,12 @@ final class DaemonClient {
 
     func start() {
         if DemoFixture.isEnabled {
-            let snapshot = DemoFixture.snapshot()
+            let curves = Int(ProcessInfo.processInfo.environment["GLASSFAN_DEMO_CURVES"] ?? "") ?? 1
+            let snapshot = DemoFixture.snapshot(curves: curves)
             SensorCatalog.configure(snapshot.sensors, engines: snapshot.sensorEngines ?? [:])
             feed = Feed(snapshot: snapshot, history: DemoFixture.history())
             isConnected = true
+            DropScript.begin()
             return
         }
         connect()
