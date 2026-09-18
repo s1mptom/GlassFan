@@ -133,6 +133,9 @@ final class FanHardware {
     /// up yet and the cost of giving up early is a feature that works on a fast day.
     private static let unlockTimeout: TimeInterval = 45
     private var unlockDeadline: Date?
+    /// Waiting for the thermal manager to let go. What separates "cannot" from
+    /// "not yet", and the interface needs the difference more than the log does.
+    var isAcquiring: Bool { unlockDeadline != nil }
     /// Whether this Mac has the key at all. Some M3s reportedly do not, and there the
     /// behaviour is what it always was.
     private lazy var hasTestKey = smc.read("Ftst") != nil

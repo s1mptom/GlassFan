@@ -144,10 +144,15 @@ struct CurveEditor: View {
                 .frame(width: 13, height: 13)
                 .scaleEffect(dragging == index ? 1.25 : 1)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: dragging)
-                .position(position(point, in: plot))
+                // Before `.position`, not after. A positioned view takes all the space
+                // its parent offers - only its drawing is at the point - so a hover
+                // attached afterwards covers the whole plot. Every handle then claimed
+                // every pointer position, the last one round the loop won, and moving
+                // onto the chart anywhere read out the rightmost point.
                 .onHover { inside in
                     if inside { hovered = index } else if hovered == index { hovered = nil }
                 }
+                .position(position(point, in: plot))
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in

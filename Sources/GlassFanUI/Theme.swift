@@ -123,6 +123,8 @@ extension FanReading {
     /// while a discarded one is the system having taken the fans back and nothing
     /// the user did wrong.
     var failureCaption: String? {
+        // Asked for and not there yet, which is neither of the two failures.
+        if acquiring == true { return L10n.t("берём управление", "taking control") }
         switch writeFailure ?? (writeError != nil ? .refused : nil) {
         case .refused: return L10n.t("запись отклонена", "write refused")
         case .ignored: return L10n.t("система забрала", "system took over")
@@ -133,10 +135,14 @@ extension FanReading {
     /// Worth colouring red: the fan is in trouble or not doing what it was told.
     /// A stored-away expression rather than three copies inline, which also keeps
     /// the type-checker from timing out inside a SwiftUI body.
-    var alerting: Bool { emergency || failureCaption != nil }
+    var alerting: Bool { emergency || (acquiring != true && failureCaption != nil) }
 
     /// The longer form, for the line under the fan.
     var failureSubtitle: String? {
+        if acquiring == true {
+            return L10n.t("система отдаёт вентилятор, это несколько секунд",
+                          "the system is handing the fan over, a few seconds")
+        }
         switch writeFailure ?? (writeError != nil ? .refused : nil) {
         case .refused: return L10n.t("настройка не применилась", "the setting did not take")
         case .ignored: return L10n.t("система вернула вентилятор себе", "the system took the fan back")

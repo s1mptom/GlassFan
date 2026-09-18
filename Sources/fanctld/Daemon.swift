@@ -3,7 +3,7 @@ import FanKit
 
 /// Owns the control loop: read sensors, decide, write fans, publish.
 final class Daemon {
-    static let version = "0.1.6"
+    static let version = "0.1.7"
     /// Overridable so the daemon can be run from a build directory during development,
     /// where /var/run is not writable and fan writes are expected to fail.
     static var socketPath = ProcessInfo.processInfo.environment["GLASSFAN_SOCKET"]
@@ -243,6 +243,7 @@ final class Daemon {
             var applied = false
             var writeError: String?
             var writeFailure: FanWriteFailure?
+            var acquiring = false
             do {
                 if let target {
                     try hardware.setTarget(fan.index, rpm: target)
@@ -252,11 +253,21 @@ final class Daemon {
                 }
             } catch {
                 writeError = "\(error)"
-                writeFailure = (error as? SMCDevice.Failure).map {
-                    if case .ignored = $0 { return .ignored } else { return .refused }
-                } ?? .refused
-                if lastWriteError[fan.index] != writeError {
-                    Log.error("fan \(fan.index): \(error)")
+                // Still taking the fan is not the same as not being able to. On M3 and
+                // later the thermal manager takes seconds to let go, and every second
+                // of that arrives here as a refusal.
+                if hardware.isAcquiring {
+                    acquiring = true
+                    if lastWriteError[fan.index] != writeError {
+                        Log.info("fan \(fan.index): waiting for the thermal manager to let go")
+                    }
+                } else {
+                    writeFailure = (error as? SMCDevice.Failure).map {
+                        if case .ignored = $0 { return .ignored } else { return .refused }
+                    } ?? .refused
+                    if lastWriteError[fan.index] != writeError {
+                        Log.error("fan \(fan.index): \(error)")
+                    }
                 }
             }
             lastWriteError[fan.index] = writeError
@@ -274,7 +285,8 @@ final class Daemon {
                 drivingTemp: controller.lastDrivingTemp,
                 emergency: controller.isEmergency,
                 writeError: writeError,
-                writeFailure: writeFailure
+                writeFailure: writeFailure,
+                acquiring: acquiring
             ))
         }
 
