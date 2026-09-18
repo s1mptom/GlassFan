@@ -83,7 +83,15 @@ struct GlassDropList<Row: View>: View {
             }
             .onEnded { _ in
                 drop.pressing = false
-                guard measured else { return }
+                guard measured else {
+                    // The rows changed under the press - a curve removed by its own
+                    // button. There is nowhere to land; put the drop down.
+                    drop.held = nil
+                    drop.dragging = false
+                    drop.onArrival = nil
+                    drop.engaged = false
+                    return
+                }
                 if drop.dragging {
                     drop.target = DropListMath.owner(of: drop.headY.value, in: rows)
                     drop.held = nil

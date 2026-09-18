@@ -19,7 +19,8 @@ private struct PreviewShell: View {
          frost: Double = GlassStyle.defaultFrost,
          tint: Double = GlassStyle.defaultTint,
          sensorFilter: SensorFilter = .essential,
-         sensorSort: SensorSort = .importance) {
+         sensorSort: SensorSort = .importance,
+         curves: Int = 1) {
         // The window restores these, so seeding them is how a preview picks a screen
         // and a glass setting - and it exercises the same path the app really takes.
         UserDefaults.standard.set(screen.rawValue, forKey: Screen.storageKey)
@@ -28,7 +29,7 @@ private struct PreviewShell: View {
         UserDefaults.standard.set(sensorFilter.rawValue, forKey: SensorsView.filterKey)
         UserDefaults.standard.set(sensorSort.rawValue, forKey: SensorsView.sortKey)
         UserDefaults.standard.set(sensorSort.ascendingByDefault, forKey: SensorsView.ascendingKey)
-        client = .demo(connected: connected, alarming: alarming, fanless: fanless, sleptAt: sleptAt)
+        client = .demo(connected: connected, alarming: alarming, fanless: fanless, sleptAt: sleptAt, curves: curves)
     }
 
     var body: some View {
@@ -42,6 +43,9 @@ private struct PreviewShell: View {
 #Preview("Overview") { PreviewShell(.overview) }
 
 #Preview("Fans") { PreviewShell(.fans) }
+
+/// Three curves on fan 1: palm rests, CPU, GPU - the CPU's setting the speed.
+#Preview("Fans · three curves") { PreviewShell(.fans, curves: 3) }
 
 #Preview("Sensors") { PreviewShell(.sensors) }
 

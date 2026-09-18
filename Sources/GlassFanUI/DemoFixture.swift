@@ -50,12 +50,22 @@ enum DemoFixture {
 
     /// `alarming` is the state nobody sees during normal use and which therefore
     /// rots: one fan run away on the emergency rule, the other refusing writes.
-    static func snapshot(alarming: Bool = false, fanless: Bool = false) -> Snapshot {
+    /// `curves`: how many curves fan 1 follows - palm rests, CPU, GPU - with the
+    /// CPU's setting the speed when there is more than one.
+    static func snapshot(alarming: Bool = false, fanless: Bool = false, curves: Int = 1) -> Snapshot {
         var config = AppConfig.default(fanCount: fanless ? 0 : 2)
         if !fanless {
             config.fans[0].mode = .curve
-            config.fans[0].curves = [CurveRule(sensorKeys: ["TCMz", "Th02"],
-                                               curve: .starter(maxRPM: limits0.maxRPM))]
+            config.fans[0].curves = curves > 1
+                ? Array([
+                    CurveRule(sensorKeys: ["Ts0P", "Ts1P"], curve: FanCurve(points: [
+                        CurvePoint(temperature: 40, rpm: 0), CurvePoint(temperature: 55, rpm: 1800),
+                        CurvePoint(temperature: 75, rpm: 3400), CurvePoint(temperature: 90, rpm: limits0.maxRPM)])),
+                    CurveRule(sensorKeys: ["TCMz", "Th02"], curve: FanCurve(points: [
+                        CurvePoint(temperature: 60, rpm: 1500), CurvePoint(temperature: 90, rpm: limits0.maxRPM)])),
+                    CurveRule(sensorKeys: ["Tg05"], curve: .starter(maxRPM: 4000)),
+                  ].prefix(curves))
+                : [CurveRule(sensorKeys: ["TCMz", "Th02"], curve: .starter(maxRPM: limits0.maxRPM))]
         }
         config.trackedSensors = ["TCMz", "Tg05", "Th02", "Ts0P"]
 
@@ -68,7 +78,7 @@ enum DemoFixture {
                            targetRPM: alarming ? 5348 : 2600,
                            limits: limits0,
                            mode: .curve, forced: true, drivingTemp: alarming ? 97 : 78.5,
-                           emergency: alarming),
+                           emergency: alarming, drivingCurve: curves > 1 ? 1 : 0),
                 FanReading(index: 1, actualRPM: 1654, targetRPM: 1654, limits: limits1,
                            mode: alarming ? .fixed : .auto, forced: false, drivingTemp: nil,
                            emergency: false,

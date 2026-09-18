@@ -8,7 +8,6 @@ struct FansView: View {
     /// screen at a particular fan before switching to it.
     @AppStorage(FansView.selectedKey) private var selected: Int = 0
     static let selectedKey = "fans.selected"
-    @State private var showingSensorPicker = false
     @State private var hoveredFan: Int?
     /// Per fan, which of its curves is being edited.
     @State private var editingCurve: [Int: Int] = [:]
@@ -41,18 +40,29 @@ struct FansView: View {
 
     // MARK: Fan picker
 
+    /// Scrolls once it outgrows the window: three curve groups and, on an M3 Pro, the
+    /// SMC's zone targets under them are taller than the window's height.
     private var sidebar: some View {
+        ScrollView(.vertical, showsIndicators: false) { sidebarContent }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(width: 212)
+    }
+
+    private var sidebarContent: some View {
         VStack(spacing: 12) {
             ForEach(fans) { item in
                 fanRow(item)
             }
             if let fan, settings(for: fan).mode == .curve {
-                sensorBox(fan)
+                CurveGroups(curves: binding(for: fan).curves,
+                            editing: editingBinding(for: fan),
+                            driving: fan.drivingCurve,
+                            drivingTemp: fan.drivingTemp,
+                            maxRPM: fan.limits.maxRPM)
             }
             if !zoneTargets.isEmpty {
                 smcTargetBox(zoneTargets)
             }
-            Spacer(minLength: 0)
         }
         .frame(width: 212)
     }
@@ -141,61 +151,12 @@ struct FansView: View {
         switch item.mode {
         case .auto:  return L10n.t("система", "system")
         case .fixed: return L10n.t("фиксировано", "fixed")
-        case .curve: return L10n.t("по кривой", "curve")
-        }
-    }
-
-    private func sensorBox(_ fan: FanReading) -> some View {
-        let current = settings(for: fan)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                SectionCaption(text: L10n.t("Датчики кривой", "Curve sensors"))
-                Spacer()
-                Button {
-                    showingSensorPicker = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Palette.ink.opacity(0.6))
-                .popover(isPresented: $showingSensorPicker, arrowEdge: .trailing) {
-                    SensorPicker(selection: binding(for: fan).curves[0].sensorKeys)
-                        .environment(client)
-                        .frame(width: 360, height: 420)
-                }
+        case .curve:
+            if let driving = item.drivingCurve, settings(for: item).curves.count > 1 {
+                return L10n.t("по кривой \(driving + 1)", "curve \(driving + 1)")
             }
-
-            if current.curves[0].sensorKeys.isEmpty {
-                Text(L10n.t("Ни одного датчика — вентилятор останется на авто.",
-                            "No sensor chosen, so the fan stays on auto."))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.heat.opacity(0.9))
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                FlowLayout(spacing: 6) {
-                    ForEach(current.curves[0].sensorKeys, id: \.self) { key in
-                        SensorChip(name: SensorCatalog.info(for: key).name,
-                                   value: client.reading(for: key),
-                                   highlighted: client.reading(for: key) == fan.drivingTemp) {
-                            binding(for: fan).curves[0].sensorKeys.wrappedValue.removeAll { $0 == key }
-                        }
-                    }
-                }
-                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: current.curves[0].sensorKeys)
-                Text(L10n.t("Кривую ведёт самый горячий", "The hottest one drives the curve"))
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.ink.opacity(0.3))
-            }
+            return L10n.t("по кривой", "curve")
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Palette.ink.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Palette.ink.opacity(0.08), lineWidth: 0.5))
-        )
     }
 
     // MARK: Detail
