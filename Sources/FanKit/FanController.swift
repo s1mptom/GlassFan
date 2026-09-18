@@ -62,7 +62,7 @@ public struct FanController {
             }
 
             let effective = applyHysteresis(to: hottest)
-            guard let demand = settings.curve.rpm(at: effective) else {
+            guard let demand = settings.curves[0].curve.rpm(at: effective) else {
                 heldTemp = nil
                 lastTarget = nil
                 return nil
@@ -76,7 +76,7 @@ public struct FanController {
     }
 
     private func assignedMax(_ temperatures: [String: Double]) -> Double? {
-        settings.sensorKeys.compactMap { temperatures[$0] }.max()
+        settings.allSensorKeys.compactMap { temperatures[$0] }.max()
     }
 
     /// Rises follow the temperature at once; falls wait until it has dropped past the band.

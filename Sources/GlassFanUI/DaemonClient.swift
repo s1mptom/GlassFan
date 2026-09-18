@@ -147,7 +147,7 @@ final class DaemonClient {
             // the list has not changed, so this costs nothing per reading.
             SensorCatalog.configure(snapshot.sensors, engines: snapshot.sensorEngines ?? [:])
             let tracked = Set(snapshot.config.trackedSensors)
-                .union(snapshot.config.fans.flatMap(\.sensorKeys))
+                .union(snapshot.config.fans.flatMap(\.allSensorKeys))
             var temps: [String: Double] = [:]
             for sensor in snapshot.sensors where tracked.contains(sensor.key) {
                 temps[sensor.key] = sensor.value

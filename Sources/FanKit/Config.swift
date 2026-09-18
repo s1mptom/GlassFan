@@ -36,27 +36,70 @@ public struct FanLimits: Codable, Equatable, Sendable {
     }
 }
 
+/// One of a fan's curves: a group of sensors, the hottest of which is read against
+/// `curve`. A fan runs at the fastest of its curves.
+public struct CurveRule: Codable, Equatable, Sendable {
+    public var sensorKeys: [String]
+    public var curve: FanCurve
+
+    public init(sensorKeys: [String] = [], curve: FanCurve) {
+        self.sensorKeys = sensorKeys
+        self.curve = curve
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sensorKeys = try c.decodeIfPresent([String].self, forKey: .sensorKeys) ?? []
+        curve = try c.decodeIfPresent(FanCurve.self, forKey: .curve) ?? FanCurve(points: [])
+    }
+}
+
 public struct FanSettings: Codable, Equatable, Sendable, Identifiable {
+    public static let maxCurves = 3
+
     public var id: Int
     public var mode: FanMode
     public var fixedRPM: Double
-    /// Keys of the sensors driving this fan. The hottest one wins.
-    public var sensorKeys: [String]
-    public var curve: FanCurve
+    /// One to three, each over its own sensors. Never empty.
+    public var curves: [CurveRule] {
+        didSet { curves = Self.normalised(curves) }
+    }
     /// How far the temperature must fall before the target follows it down, in degrees.
     public var hysteresis: Double
     /// 0 applies the demand at once; values towards 1 ease into it.
     public var smoothing: Double
 
-    public init(id: Int, mode: FanMode, fixedRPM: Double, sensorKeys: [String],
-                curve: FanCurve, hysteresis: Double, smoothing: Double) {
+    /// Every sensor any of the curves reads, each once, in the order first met.
+    public var allSensorKeys: [String] {
+        var seen = Set<String>()
+        return curves.flatMap(\.sensorKeys).filter { seen.insert($0).inserted }
+    }
+
+    public init(id: Int, mode: FanMode, fixedRPM: Double, curves: [CurveRule],
+                hysteresis: Double, smoothing: Double) {
         self.id = id
         self.mode = mode
         self.fixedRPM = fixedRPM
-        self.sensorKeys = sensorKeys
-        self.curve = curve
+        self.curves = Self.normalised(curves)
         self.hysteresis = hysteresis
         self.smoothing = smoothing
+    }
+
+    /// A fan with one curve, as every fan had before curves were grouped.
+    public init(id: Int, mode: FanMode, fixedRPM: Double, sensorKeys: [String],
+                curve: FanCurve, hysteresis: Double, smoothing: Double) {
+        self.init(id: id, mode: mode, fixedRPM: fixedRPM,
+                  curves: [CurveRule(sensorKeys: sensorKeys, curve: curve)],
+                  hysteresis: hysteresis, smoothing: smoothing)
+    }
+
+    private static func normalised(_ curves: [CurveRule]) -> [CurveRule] {
+        let kept = Array(curves.prefix(maxCurves))
+        return kept.isEmpty ? [CurveRule(curve: FanCurve(points: []))] : kept
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, mode, fixedRPM, curves, sensorKeys, curve, hysteresis, smoothing
     }
 
     public init(from decoder: Decoder) throws {
@@ -64,10 +107,30 @@ public struct FanSettings: Codable, Equatable, Sendable, Identifiable {
         id = try c.decode(Int.self, forKey: .id)
         mode = try c.decodeIfPresent(FanMode.self, forKey: .mode) ?? .auto
         fixedRPM = try c.decodeIfPresent(Double.self, forKey: .fixedRPM) ?? 2000
-        sensorKeys = try c.decodeIfPresent([String].self, forKey: .sensorKeys) ?? []
-        curve = try c.decodeIfPresent(FanCurve.self, forKey: .curve) ?? FanCurve(points: [])
+        // Written before curves were grouped: the one curve and its sensors are curve one.
+        if let grouped = try c.decodeIfPresent([CurveRule].self, forKey: .curves), !grouped.isEmpty {
+            curves = Self.normalised(grouped)
+        } else {
+            curves = [CurveRule(
+                sensorKeys: try c.decodeIfPresent([String].self, forKey: .sensorKeys) ?? [],
+                curve: try c.decodeIfPresent(FanCurve.self, forKey: .curve) ?? FanCurve(points: []))]
+        }
         hysteresis = min(max(try c.decodeIfPresent(Double.self, forKey: .hysteresis) ?? 2, 0), 20)
         smoothing = min(max(try c.decodeIfPresent(Double.self, forKey: .smoothing) ?? 0.3, 0), 0.95)
+    }
+
+    /// Curve one goes out a second time under the old keys. A daemon from before groups
+    /// reads only those, and drives by curve one instead of by nothing.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(fixedRPM, forKey: .fixedRPM)
+        try c.encode(curves, forKey: .curves)
+        try c.encode(curves[0].sensorKeys, forKey: .sensorKeys)
+        try c.encode(curves[0].curve, forKey: .curve)
+        try c.encode(hysteresis, forKey: .hysteresis)
+        try c.encode(smoothing, forKey: .smoothing)
     }
 }
 

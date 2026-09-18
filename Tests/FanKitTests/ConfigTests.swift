@@ -73,4 +73,50 @@ struct TrackedDefaultsTests {
     func nothingAvailable() {
         #expect(SensorCatalog.trackedDefaults(available: []).isEmpty)
     }
+
+    @Test("a config written before curves were grouped comes through as curve one")
+    func migratesSingleCurve() throws {
+        let json = #"""
+        {"id":0,"mode":"curve","fixedRPM":2000,"sensorKeys":["Ts0P","Ts1P"],
+         "curve":[{"temperature":40,"rpm":0},{"temperature":80,"rpm":3000}],
+         "hysteresis":2,"smoothing":0.3}
+        """#
+        let settings = try JSONDecoder().decode(FanSettings.self, from: Data(json.utf8))
+        #expect(settings.curves.count == 1)
+        #expect(settings.curves[0].sensorKeys == ["Ts0P", "Ts1P"])
+        #expect(settings.curves[0].curve.points.count == 2)
+    }
+
+    @Test("curve one is written in the old shape too, for a daemon that predates groups")
+    func writesBothShapes() throws {
+        let settings = FanSettings(id: 0, mode: .curve, fixedRPM: 2000, curves: [
+            CurveRule(sensorKeys: ["Ts0P"], curve: .starter(maxRPM: 5000)),
+            CurveRule(sensorKeys: ["TCMz"], curve: .starter(maxRPM: 5000)),
+        ], hysteresis: 2, smoothing: 0.3)
+        let data = try JSONEncoder().encode(settings)
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["sensorKeys"] as? [String] == ["Ts0P"])
+        #expect((object["curve"] as? [Any])?.count == 2)
+        #expect((object["curves"] as? [Any])?.count == 2)
+        #expect(try JSONDecoder().decode(FanSettings.self, from: data) == settings)
+    }
+
+    @Test("no more than three curves, and never none")
+    func curveCount() {
+        let rule = CurveRule(curve: .starter(maxRPM: 5000))
+        let many = FanSettings(id: 0, mode: .curve, fixedRPM: 2000, curves: Array(repeating: rule, count: 5),
+                               hysteresis: 2, smoothing: 0)
+        #expect(many.curves.count == FanSettings.maxCurves)
+        let none = FanSettings(id: 0, mode: .curve, fixedRPM: 2000, curves: [], hysteresis: 2, smoothing: 0)
+        #expect(none.curves.count == 1)
+    }
+
+    @Test("a sensor in two groups is listed once")
+    func allSensorKeys() {
+        let settings = FanSettings(id: 0, mode: .curve, fixedRPM: 2000, curves: [
+            CurveRule(sensorKeys: ["A", "B"], curve: .starter(maxRPM: 5000)),
+            CurveRule(sensorKeys: ["B", "C"], curve: .starter(maxRPM: 5000)),
+        ], hysteresis: 2, smoothing: 0)
+        #expect(settings.allSensorKeys == ["A", "B", "C"])
+    }
 }

@@ -54,8 +54,8 @@ enum DemoFixture {
         var config = AppConfig.default(fanCount: fanless ? 0 : 2)
         if !fanless {
             config.fans[0].mode = .curve
-            config.fans[0].sensorKeys = ["TCMz", "Th02"]
-            config.fans[0].curve = .defaultCurve(minRPM: limits0.minRPM, maxRPM: limits0.maxRPM)
+            config.fans[0].curves = [CurveRule(sensorKeys: ["TCMz", "Th02"],
+                                               curve: .starter(maxRPM: limits0.maxRPM))]
         }
         config.trackedSensors = ["TCMz", "Tg05", "Th02", "Ts0P"]
 

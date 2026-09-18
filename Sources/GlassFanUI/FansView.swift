@@ -159,13 +159,13 @@ struct FansView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.ink.opacity(0.6))
                 .popover(isPresented: $showingSensorPicker, arrowEdge: .trailing) {
-                    SensorPicker(selection: binding(for: fan).sensorKeys)
+                    SensorPicker(selection: binding(for: fan).curves[0].sensorKeys)
                         .environment(client)
                         .frame(width: 360, height: 420)
                 }
             }
 
-            if current.sensorKeys.isEmpty {
+            if current.curves[0].sensorKeys.isEmpty {
                 Text(L10n.t("Ни одного датчика — вентилятор останется на авто.",
                             "No sensor chosen, so the fan stays on auto."))
                     .font(.system(size: 10.5))
@@ -173,15 +173,15 @@ struct FansView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 FlowLayout(spacing: 6) {
-                    ForEach(current.sensorKeys, id: \.self) { key in
+                    ForEach(current.curves[0].sensorKeys, id: \.self) { key in
                         SensorChip(name: SensorCatalog.info(for: key).name,
                                    value: client.reading(for: key),
                                    highlighted: client.reading(for: key) == fan.drivingTemp) {
-                            binding(for: fan).sensorKeys.wrappedValue.removeAll { $0 == key }
+                            binding(for: fan).curves[0].sensorKeys.wrappedValue.removeAll { $0 == key }
                         }
                     }
                 }
-                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: current.sensorKeys)
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: current.curves[0].sensorKeys)
                 Text(L10n.t("Кривую ведёт самый горячий", "The hottest one drives the curve"))
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.ink.opacity(0.3))
@@ -315,14 +315,13 @@ struct FansView: View {
 
     private func curvePanel(_ fan: FanReading, _ settings: Binding<FanSettings>) -> some View {
         Group {
-            if settings.wrappedValue.curve.points.isEmpty {
+            if settings.wrappedValue.curves[0].curve.points.isEmpty {
                 VStack(spacing: 14) {
                     Text(L10n.t("Кривая ещё не задана", "No curve yet"))
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.ink.opacity(0.55))
                     Button(L10n.t("Создать кривую", "Create a curve")) {
-                        settings.wrappedValue.curve = .defaultCurve(minRPM: fan.limits.minRPM,
-                                                                    maxRPM: fan.limits.maxRPM)
+                        settings.wrappedValue.curves[0].curve = .starter(maxRPM: fan.limits.maxRPM)
                         client.commit()
                     }
                     .buttonStyle(.glassProminent)
@@ -330,7 +329,7 @@ struct FansView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 CurveEditor(
-                    curve: settings.curve,
+                    curve: settings.curves[0].curve,
                     limits: fan.limits,
                     currentTemp: fan.drivingTemp,
                     currentRPM: fan.actualRPM,

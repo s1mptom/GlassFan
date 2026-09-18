@@ -54,4 +54,19 @@ struct CurveTests {
         let data = try JSONEncoder().encode(curve)
         #expect(try JSONDecoder().decode(FanCurve.self, from: data) == curve)
     }
+
+    @Test("a new curve is two points: resting when cool, full speed when hot")
+    func starter() {
+        let curve = FanCurve.starter(maxRPM: 5776)
+        #expect(curve.points == [CurvePoint(temperature: 40, rpm: 0), CurvePoint(temperature: 90, rpm: 5776)])
+    }
+
+    @Test("points stop at ten and do not go below two")
+    func pointLimits() {
+        var curve = FanCurve.starter(maxRPM: 5000)
+        curve.removePoint(at: 0)
+        #expect(curve.points.count == 2)
+        for t in stride(from: 45.0, through: 85.0, by: 5) { curve.addPoint(CurvePoint(temperature: t, rpm: 1000)) }
+        #expect(curve.points.count == FanCurve.maxPoints)
+    }
 }

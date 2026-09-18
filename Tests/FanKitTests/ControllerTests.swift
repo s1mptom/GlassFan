@@ -59,7 +59,7 @@ struct ControllerTests {
     @Test("caps the result at the fan's maximum and lets it fall to zero")
     func clamps() {
         var s = makeSettings()
-        s.curve = FanCurve(points: [CurvePoint(temperature: 40, rpm: 100),
+        s.curves[0].curve = FanCurve(points: [CurvePoint(temperature: 40, rpm: 100),
                                     CurvePoint(temperature: 80, rpm: 9000)])
         var c = FanController(settings: s, limits: limits)
         #expect(c.update(temperatures: ["TCMz": 20], emergencyTemp: 95) == 100)
@@ -70,7 +70,7 @@ struct ControllerTests {
     func restsAtZero() {
         var s = makeSettings()
         s.smoothing = 0
-        s.curve = FanCurve(points: [CurvePoint(temperature: 40, rpm: 0),
+        s.curves[0].curve = FanCurve(points: [CurvePoint(temperature: 40, rpm: 0),
                                     CurvePoint(temperature: 60, rpm: 3000)])
         var c = FanController(settings: s, limits: limits)
         #expect(c.update(temperatures: ["TCMz": 30], emergencyTemp: 95) == 0)

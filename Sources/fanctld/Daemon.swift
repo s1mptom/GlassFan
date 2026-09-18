@@ -403,7 +403,7 @@ final class Daemon {
         )
         lastSnapshot = snapshot
 
-        let tracked = Set(config.trackedSensors).union(config.fans.flatMap(\.sensorKeys))
+        let tracked = Set(config.trackedSensors).union(config.fans.flatMap(\.allSensorKeys))
         history.append(HistorySample(
             t: now,
             temps: temperatures.filter { tracked.contains($0.key) },

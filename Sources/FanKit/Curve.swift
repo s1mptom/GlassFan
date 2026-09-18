@@ -47,6 +47,10 @@ public struct FanCurve: Codable, Equatable, Sendable {
 
     // MARK: Editing
 
+    /// A curve is a line, so it needs two points; past ten it is fiddling, not shaping.
+    public static let minPoints = 2
+    public static let maxPoints = 10
+
     public mutating func movePoint(at index: Int, to point: CurvePoint) {
         guard points.indices.contains(index) else { return }
         points[index] = point
@@ -54,25 +58,23 @@ public struct FanCurve: Codable, Equatable, Sendable {
     }
 
     public mutating func addPoint(_ point: CurvePoint) {
+        guard points.count < Self.maxPoints else { return }
         points.append(point)
         points.sort { $0.temperature < $1.temperature }
     }
 
     public mutating func removePoint(at index: Int) {
-        guard points.indices.contains(index), points.count > 1 else { return }
+        guard points.indices.contains(index), points.count > Self.minPoints else { return }
         points.remove(at: index)
     }
 
-    /// A sane starting shape for a fan that idles at `minRPM` and tops out at `maxRPM`.
-    public static func defaultCurve(minRPM: Double, maxRPM: Double) -> FanCurve {
+    /// What a new curve starts as: at rest while cool - the hardware stops at zero, as
+    /// the system's own controller stops it - and flat out when hot. Two points, so it
+    /// is shaped by adding what it needs rather than by clearing out what it does not.
+    public static func starter(maxRPM: Double) -> FanCurve {
         FanCurve(points: [
-            // At rest while cool: the hardware stops at zero, as the system's
-            // own controller stops it.
             CurvePoint(temperature: 40, rpm: 0),
-            CurvePoint(temperature: 50, rpm: minRPM),
-            CurvePoint(temperature: 65, rpm: minRPM + (maxRPM - minRPM) * 0.25),
-            CurvePoint(temperature: 80, rpm: minRPM + (maxRPM - minRPM) * 0.6),
-            CurvePoint(temperature: 95, rpm: maxRPM),
+            CurvePoint(temperature: 90, rpm: maxRPM),
         ])
     }
 }
