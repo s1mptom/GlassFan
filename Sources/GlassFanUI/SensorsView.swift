@@ -200,12 +200,21 @@ struct SensorsView: View {
     /// sections, only the rows in view are built.
     private func sensorList(_ groups: [(SensorGroup, [SensorReading])]) -> some View {
         let tracked = self.tracked
+        // The chart draws the first of the tracked keys it has colours for, so which
+        // ones those are is a property of the list's order, not of the set. Computed
+        // once here rather than per row: 228 rows asking the same question is 228
+        // answers to it.
+        let charted = Set(ChartSlots.drawn(client.config?.trackedSensors ?? []))
+        let full = tracked.count >= ChartSlots.limit
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(groups, id: \.0) { group, sensors in
                     Section {
                         ForEach(sensors) { sensor in
-                            SensorRow(sensor: sensor, tracked: tracked.contains(sensor.key))
+                            SensorRow(sensor: sensor,
+                                      tracked: tracked.contains(sensor.key),
+                                      charted: charted.contains(sensor.key),
+                                      chartFull: full)
                         }
                     } header: {
                         SectionCaption(text: group.title)
@@ -319,8 +328,28 @@ struct SensorRow: View {
     @Environment(DaemonClient.self) private var client
     let sensor: SensorReading
     let tracked: Bool
+    /// Ticked *and* drawn. The two came apart the moment there were more ticks than
+    /// the palette has colours, and a tick that changed nothing visible was the whole
+    /// complaint: the chart quietly kept the first six and said so in the corner of a
+    /// legend, three screens away from the box that had just been clicked.
+    let charted: Bool
+    /// No room for another line. Ticking is refused rather than accepted and ignored.
+    let chartFull: Bool
 
     @State private var hovering = false
+
+    private var canToggle: Bool { tracked || !chartFull }
+
+    /// What the marker means, said where the hand already is.
+    private var markerHelp: String {
+        if charted { return L10n.t("На графике. Нажмите, чтобы убрать",
+                                   "On the chart. Click to remove") }
+        if tracked { return L10n.t("В очереди: на графике нет места. Уберите другой датчик",
+                                   "Waiting: the chart is full. Remove another sensor") }
+        if chartFull { return L10n.t("На графике нет места — там уже \(ChartSlots.limit) датчиков. Уберите лишний",
+                                     "The chart is full — \(ChartSlots.limit) sensors already. Remove one first") }
+        return L10n.t("Показывать на графике", "Show on the chart")
+    }
 
     private var ratio: Double { min(max((sensor.value - 20) / 80, 0), 1) }
 
@@ -336,18 +365,23 @@ struct SensorRow: View {
         let info = SensorCatalog.info(for: sensor.key)
         HStack(spacing: Self.spacing) {
             Button(action: toggleTracking) {
-                Image(systemName: tracked ? "chart.line.uptrend.xyaxis" : "circle.dotted")
+                Image(systemName: charted ? "chart.line.uptrend.xyaxis"
+                                 : tracked ? "clock" : "circle.dotted")
                     .font(.system(size: 11, weight: .medium))
                     // Untracked sensors keep their marker nearly invisible until the
                     // pointer is on the row, so a list of 228 of them is not 228 dots.
-                    .foregroundStyle(tracked ? Palette.calm
-                                             : Palette.ink.opacity(hovering ? 0.5 : 0.22))
+                    .foregroundStyle(charted ? Palette.calm
+                                     : tracked ? Palette.heat.opacity(0.8)
+                                     : Palette.ink.opacity(hovering ? (canToggle ? 0.5 : 0.25) : 0.22))
                     .frame(width: Self.markerWidth, height: 14)
             }
             .buttonStyle(.plain)
-            .help(L10n.t("Показывать на графике", "Show on the chart"))
+            .disabled(!canToggle)
+            .help(markerHelp)
             .accessibilityLabel(L10n.t("Показывать на графике", "Show on the chart"))
-            .accessibilityValue(tracked ? L10n.t("включено", "on") : L10n.t("выключено", "off"))
+            .accessibilityValue(charted ? L10n.t("на графике", "on the chart")
+                                : tracked ? L10n.t("в очереди", "waiting")
+                                : L10n.t("выключено", "off"))
 
             // Probes and diodes a step quieter than the parts they belong to, so
             // under "All" the named rows still read first.
@@ -404,11 +438,11 @@ struct SensorRow: View {
 
     private func toggleTracking() {
         guard var config = client.draftConfig ?? client.snapshot?.config else { return }
-        if let index = config.trackedSensors.firstIndex(of: sensor.key) {
-            config.trackedSensors.remove(at: index)
-        } else {
-            config.trackedSensors.append(sensor.key)
-        }
+        // Checked in the model, not only on the button: a keyboard or an assistive
+        // client reaches this action without passing the disabled state, and a tick
+        // accepted and then not drawn is the bug being fixed.
+        guard let updated = ChartSlots.toggling(sensor.key, in: config.trackedSensors) else { return }
+        config.trackedSensors = updated
         client.draftConfig = config
         client.commit()
     }
