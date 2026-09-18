@@ -292,8 +292,12 @@ private struct DropRefracted<Content: View>: View {
     }
 }
 
-/// Under the rows: the platter on the selected row at rest; in play, the drop's own
-/// glass, with the platter fading out of it as it lifts.
+/// Under the rows: the platter on the selected row at rest, and in play the drop's own
+/// glass - one body. The platter does not ride along under the drop as a shape of its
+/// own: it *is* the drop, the same outline, its glass going from the platter's frosted
+/// kind to the lens's clear kind as it lifts and back as it lands. At rest the drop's
+/// outline is the row's own, so it lifts out of the platter and settles into the next
+/// one rather than carrying a frame about underneath it.
 private struct DropGlass: View {
     let drop: DropListState
     let rows: [CGRect]
@@ -306,15 +310,20 @@ private struct DropGlass: View {
         if drop.engaged {
             TimelineView(.animation) { context in
                 let geometry = drop.geometry(at: context.date, rows: rows)
+                let lift = min(geometry.lift, 1)
+                // The ends only. The shader melts the bridge between them into a curve
+                // no path here follows, and system glass cut to a straight bridge
+                // showed as a dark bar across the neck.
+                let outline = DropOutline(geometry: geometry, bridged: false)
                 ZStack(alignment: .topLeading) {
-                    platter(geometry.head).opacity(1 - min(geometry.lift, 1))
-                    // Under the ends only. The shader melts the bridge between them into
-                    // a curve no path here follows, and system glass cut to a straight
-                    // bridge showed as a dark bar across the neck.
                     Color.clear
                         .frame(width: size.width, height: size.height)
-                        .glassEffect(.clear, in: DropOutline(geometry: geometry, bridged: false))
-                        .opacity(min(geometry.lift, 1))
+                        .glassEffect(.regular, in: outline)
+                        .opacity(1 - lift)
+                    Color.clear
+                        .frame(width: size.width, height: size.height)
+                        .glassEffect(.clear, in: outline)
+                        .opacity(lift)
                 }
             }
         } else if let resting {
