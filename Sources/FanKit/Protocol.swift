@@ -40,10 +40,16 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
     public var writeError: String?
     /// Absent from a daemon older than this field; `writeError` is then all there is.
     public var writeFailure: FanWriteFailure?
+    /// Taking the fan from the system, which on M3 and later is not instant: the
+    /// thermal manager has to let go first, and that runs five to thirteen seconds.
+    /// Not a failure and not yet a success, and it has to be told from both - reported
+    /// as "write refused" it reads as something broken that the user should go and fix.
+    public var acquiring: Bool?
 
     public init(index: Int, actualRPM: Double, targetRPM: Double, limits: FanLimits,
                 mode: FanMode, forced: Bool, drivingTemp: Double?, emergency: Bool,
-                writeError: String? = nil, writeFailure: FanWriteFailure? = nil) {
+                writeError: String? = nil, writeFailure: FanWriteFailure? = nil,
+                acquiring: Bool = false) {
         self.index = index
         self.actualRPM = actualRPM
         self.targetRPM = targetRPM
@@ -54,6 +60,7 @@ public struct FanReading: Codable, Equatable, Sendable, Identifiable {
         self.emergency = emergency
         self.writeError = writeError
         self.writeFailure = writeFailure
+        self.acquiring = acquiring ? true : nil
     }
 
     public var id: Int { index }

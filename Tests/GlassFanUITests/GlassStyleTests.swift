@@ -145,6 +145,23 @@ struct FanFailureWordingTests {
         #expect(old.alerting)
     }
 
+    @Test("taking control is not a failure and does not colour the fan red")
+    func acquiringIsProgress() {
+        // Every second of the five to thirteen the thermal manager takes to let go
+        // arrives as a refused write. Reported as one, it reads as something broken
+        // that the user should go and fix, which is how it was first reported.
+        let taking = FanReading(index: 0, actualRPM: 0, targetRPM: 3000,
+                                limits: FanLimits(minRPM: 1350, maxRPM: 5349),
+                                mode: .curve, forced: false, drivingTemp: 31, emergency: false,
+                                writeError: "SMC refused F0Md with status 0x82",
+                                writeFailure: nil, acquiring: true)
+        #expect(taking.failureCaption != reading(.refused, error: "…").failureCaption)
+        #expect(taking.failureSubtitle != reading(.refused, error: "…").failureSubtitle)
+        #expect(!taking.alerting)
+        // A real refusal still does.
+        #expect(reading(.refused, error: "…").alerting)
+    }
+
     @Test("an emergency colours the fan even while the daemon is holding it")
     func emergencyAlerts() {
         let emergency = FanReading(index: 0, actualRPM: 5349, targetRPM: 5349,
