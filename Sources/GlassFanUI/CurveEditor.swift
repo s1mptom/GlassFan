@@ -236,6 +236,10 @@ struct CurveEditor: View {
                     .animation(.easeOut(duration: 0.15), value: inspected)
             }
         }
+        // Decoration, and it takes no clicks. Both the dot and its label are
+        // `.position`ed, and a positioned view fills the space its parent offers - so
+        // this layer covers the whole plot however small the thing drawn on it is.
+        .allowsHitTesting(false)
     }
 
     /// Dashed lines from the inspected point down to the temperature axis and across
@@ -309,6 +313,12 @@ struct CurveEditor: View {
                     .position(x: plot.minX - 20, y: plot.maxY - plot.height * fraction)
             }
         }
+        // Labels take no clicks. Each is `.position`ed, and a positioned view fills the
+        // space its parent offers, so this layer covered the whole plot - and it is
+        // drawn after the handles, so it covered those too. Double-clicking a point
+        // landed on an axis label instead of the point, fell through to the editor's
+        // own double-click, and added a point where one was being removed.
+        .allowsHitTesting(false)
     }
 }
 
