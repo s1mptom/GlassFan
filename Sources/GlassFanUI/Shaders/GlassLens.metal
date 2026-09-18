@@ -8,21 +8,64 @@ using namespace metal;
 // hard the rim bends, a frosting of what it bends, Fresnel reflection at grazing
 // angles, and glare where a fixed light catches the curve.
 
-struct CapsuleHit {
+struct DropHit {
     float dist;       // signed distance to the rim: negative inside
     float2 outward;   // unit normal of the rim, pointing out
 };
 
-/// A horizontal capsule: a stadium whose ends are half circles of the full height.
-static CapsuleHit capsule(float2 p, float2 centre, float2 halfSize) {
-    float2 offset = p - centre;
-    float spine = max(halfSize.x - halfSize.y, 0.0);
-    float2 fromSpine = offset - float2(clamp(offset.x, -spine, spine), 0.0);
-    float length_ = length(fromSpine);
-    CapsuleHit hit;
-    hit.dist = length_ - halfSize.y;
-    hit.outward = length_ > 1e-3 ? fromSpine / length_ : float2(0.0, offset.y >= 0.0 ? 1.0 : -1.0);
+/// A rectangle with rounded corners; `box` is x, y, width, height.
+static float roundBox(float2 p, float4 box, float radius) {
+    float2 halfSize = box.zw * 0.5;
+    float2 centre = box.xy + halfSize;
+    float r = min(radius, min(halfSize.x, halfSize.y));
+    float2 q = abs(p - centre) - halfSize + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+static float segmentDist(float2 p, float2 a, float2 b) {
+    float2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+/// A minimum that melts two shapes into one where they come within `k` of each other.
+static float smoothMin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+/// The drop: a head and a tail, each a rounded box, and between their centres a bridge
+/// of radius `neck`, all melted together - so a drop pulled out of one place into
+/// another necks between them the way a liquid does. With the tail on the head, a
+/// radius of half the height and no neck, it is a capsule.
+static float dropDist(float2 p, float4 head, float4 tail, float radius, float neck) {
+    float d = roundBox(p, head, radius);
+    if (any(head != tail)) {
+        const float k = 8.0;
+        d = smoothMin(d, roundBox(p, tail, radius), k);
+        if (neck > 0.0) {
+            d = smoothMin(d, segmentDist(p, head.xy + head.zw * 0.5, tail.xy + tail.zw * 0.5) - neck, k);
+        }
+    }
+    return d;
+}
+
+/// The distance, and the rim's normal from the distance's slope.
+static DropHit drop(float2 p, float4 head, float4 tail, float radius, float neck) {
+    DropHit hit;
+    hit.dist = dropDist(p, head, tail, radius, neck);
+    const float e = 0.5;
+    float2 slope = float2(
+        dropDist(p + float2(e, 0.0), head, tail, radius, neck) - dropDist(p - float2(e, 0.0), head, tail, radius, neck),
+        dropDist(p + float2(0.0, e), head, tail, radius, neck) - dropDist(p - float2(0.0, e), head, tail, radius, neck));
+    float l = length(slope);
+    hit.outward = l > 1e-4 ? slope / l : float2(0.0, 1.0);
     return hit;
+}
+
+/// The drop's thickness: its narrowest side. The bevel is cut from half of it.
+static float thickness(float4 head, float4 tail) {
+    return min(min(head.z, head.w), min(tail.z, tail.w));
 }
 
 /// Premultiplied "top over bottom".
@@ -38,28 +81,33 @@ static half4 frosted(SwiftUI::Layer layer, float2 p, float2 along, float2 across
             + layer.sample(p + across * spread) + layer.sample(p - across * spread)) / 6.0h;
 }
 
-/// - lens: x, y, width, height of the drop in the layer's coordinates.
+/// - head, tail: x, y, width, height of the drop's two ends in the layer's
+///   coordinates; the same box twice for a drop that is not drawn out.
+/// - radius: corner radius of each end; neck: radius of the bridge between them.
 /// - magnification: of the body, at its centre; 1 leaves the content as it is.
 /// - lift: 0 for a platter at rest, 1 for the drop fully up. Everything scales with it.
-/// - motion: the drop's horizontal speed, -1...1. Dispersion grows with it and the
+/// - motion: the drop's speed along its way, -1...1. Dispersion grows with it and the
 ///   light swings with it, as it does on glass that is moving.
 /// - darkInk: 1 when the content is dark marks on a light ground.
 [[ stitchable ]]
 half4 glassLens(float2 position, SwiftUI::Layer layer,
-                float4 lens, float magnification, float lift, float motion, float darkInk)
+                float4 head, float4 tail, float radius, float neck,
+                float magnification, float lift, float motion, float darkInk)
 {
     half4 original = layer.sample(position);
-    float2 halfSize = lens.zw * 0.5;
-    float2 centre = lens.xy + halfSize;
-    if (lift <= 0.002 || halfSize.y <= 0.5) { return original; }
+    float4 bounds = float4(min(head.xy, tail.xy), 0.0, 0.0);
+    bounds.zw = max(head.xy + head.zw, tail.xy + tail.zw) - bounds.xy;
+    float2 halfSize = bounds.zw * 0.5;
+    float2 centre = bounds.xy + halfSize;
+    float half_ = thickness(head, tail) * 0.5;
+    if (lift <= 0.002 || half_ <= 0.5) { return original; }
 
-    CapsuleHit shape = capsule(position, centre, halfSize);
+    DropHit shape = drop(position, head, tail, radius, neck);
     if (shape.dist > 2.5) { return original; }
 
     float2 normal = shape.outward;
     float2 tangent = float2(-normal.y, normal.x);
     float depth = max(-shape.dist, 0.0);
-    float radius = halfSize.y;
     bool dark = darkInk > 0.5;
 
     // Body: a shallow dome, most magnified at the centre and a little less out
@@ -74,7 +122,7 @@ half4 glassLens(float2 position, SwiftUI::Layer layer,
     // Snell's law (glass, n = 1.5); the steeper the surface, the further it lands
     // from where it entered. Sampling from further in makes what is inside the
     // drop wrap out across its rim.
-    float bevel = min(radius * 0.95, 18.0);
+    float bevel = min(half_ * 0.95, 18.0);
     float bendAmount = 0.0;
     if (depth < bevel) {
         float steepness = 1.0 - depth / bevel;
@@ -135,17 +183,17 @@ half4 glassLens(float2 position, SwiftUI::Layer layer,
 /// of the layer wherever it is allowed to sample far afield, and the light, all
 /// translucent, came out as a bright stripe across the drop.
 [[ stitchable ]]
-half4 glassLight(float2 position, half4 color, float4 lens, float lift, float motion, float darkInk)
+half4 glassLight(float2 position, half4 color, float4 head, float4 tail, float radius, float neck,
+                 float lift, float motion, float darkInk)
 {
-    float2 halfSize = lens.zw * 0.5;
-    float2 centre = lens.xy + halfSize;
-    if (lift <= 0.002 || halfSize.y <= 0.5) { return half4(0.0); }
-    CapsuleHit shape = capsule(position, centre, halfSize);
+    float half_ = thickness(head, tail) * 0.5;
+    if (lift <= 0.002 || half_ <= 0.5) { return half4(0.0); }
+    DropHit shape = drop(position, head, tail, radius, neck);
     if (shape.dist > 2.5) { return half4(0.0); }
 
     bool dark = darkInk > 0.5;
     float depth = max(-shape.dist, 0.0);
-    float bevel = min(halfSize.y * 0.95, 18.0);
+    float bevel = min(half_ * 0.95, 18.0);
 
     float angle = (-135.0 + 28.0 * clamp(motion, -1.0, 1.0)) * M_PI_F / 180.0;
     float2 light = float2(cos(angle), sin(angle));

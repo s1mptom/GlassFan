@@ -488,6 +488,9 @@ private struct LensRefraction: ViewModifier {
                 .layerEffect(
                     library.glassLens(
                         .float4(rect.minX, rect.minY, rect.width, rect.height),
+                        .float4(rect.minX, rect.minY, rect.width, rect.height),
+                        .float(rect.height / 2),
+                        .float(0),
                         .float(geometry.magnification),
                         .float(min(geometry.lift, 1)),
                         .float(geometry.motion),
@@ -557,6 +560,9 @@ private struct Lens: View {
                         .fill(.white)
                         .colorEffect(library.glassLight(
                             .float4(lens.minX, lens.minY, lens.width, lens.height),
+                            .float4(lens.minX, lens.minY, lens.width, lens.height),
+                            .float(lens.height / 2),
+                            .float(0),
                             .float(min(geometry.lift, 1)),
                             .float(geometry.motion),
                             .float(colorScheme == .light ? 1 : 0)
