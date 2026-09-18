@@ -3,10 +3,12 @@ import FanKit
 
 /// The fans this Mac actually has, and the only place that writes to them.
 ///
-/// Control is tracked here rather than read back from the SMC. The mode key is not a
-/// plain "forced" flag - on this hardware the system writes its own values into it
-/// (3 was observed while the fans were idle and stopped), so inferring ownership from
-/// it would have us fighting the system. We only ever release what we ourselves took.
+/// Ownership is what this daemon took, and it is kept by what the SMC reads back:
+/// the manual-mode key after asking for it, and each target after writing it (see
+/// `setTarget`). A fan whose writes the SMC keeps discarding is no longer counted as
+/// held. The mode key alone is not a "forced" flag - the system writes its own values
+/// into it (3 was observed while the fans were idle and stopped) - so a fan is never
+/// taken or released on its say-so; we only ever release what we ourselves took.
 final class FanHardware {
     struct Fan {
         let index: Int
@@ -63,13 +65,21 @@ final class FanHardware {
         } else {
             sinceAssert[index] = ticks + 1
         }
+        // What the key holds before this write is the verdict on the last one: an M1
+        // takes a target on its next pass, so straight after a write it still reads
+        // the one before. See `TargetReadBack`.
+        let before = targetRPM(index)
         try smc.write("F\(index)Tg", value: rpm)
 
         // A single mismatch is not a verdict: the system writes into these keys too,
         // and one tick can land between our write and its own. Three in a row is the
         // SMC keeping its own value, not a race.
-        let kept = targetRPM(index) ?? .nan
-        guard abs(kept - rpm) > Self.targetTolerance else {
+        let read = targetRPM(index)
+        let kept = read ?? .nan
+        let taken = TargetReadBack.took(asked: rpm, readAfter: read, readBefore: before,
+                                        lastAsked: lastAsked[index])
+        lastAsked[index] = rpm
+        guard !taken else {
             ignoredWrites[index] = 0
             owned.insert(index)
             return
@@ -83,6 +93,7 @@ final class FanHardware {
         // Nothing was taken, so there is nothing to give back later either.
         owned.remove(index)
         sinceAssert[index] = nil
+        lastAsked[index] = nil
         throw SMCDevice.Failure.ignored(key: "F\(index)Tg", asked: rpm, kept: kept)
     }
 
@@ -188,9 +199,9 @@ final class FanHardware {
         }
     }
 
-    /// Rounding in the SMC's own float, not a licence for it to pick another speed.
-    private static let targetTolerance = 5.0
     private static let ignoredBeforeGivingUp = 3
+    /// The last target written to each fan, for judging whether it was taken.
+    private var lastAsked: [Int: Double] = [:]
     /// Consecutive writes the SMC accepted and discarded, per fan.
     private var ignoredWrites: [Int: Int] = [:]
 
@@ -211,6 +222,7 @@ final class FanHardware {
         // claiming otherwise would stop the next release from trying again.
         owned.remove(index)
         sinceAssert[index] = nil
+        lastAsked[index] = nil
         guard smc.writeAndVerify("F\(index)Md", value: 0) else {
             throw SMCDevice.Failure.ignored(key: "F\(index)Md", asked: 0,
                                             kept: rawMode(index) ?? .nan)
