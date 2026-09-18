@@ -48,4 +48,22 @@ struct DropListStateTests {
         fly(drop, seconds: 1.5)
         #expect(abs(drop.headY.value - 34.25) < 1)
     }
+
+    @Test("held and leaning on its row, the drop keeps the row's shape: no stretch, no tail")
+    func leansWhole() {
+        let drop = DropListState()
+        drop.engage(at: rows[0])
+        drop.lift.target = 1
+        var worst: CGFloat = 0
+        // Moved a little at a middling pace, then held still - where the bumps showed.
+        let start = 1000.0
+        for frame in 0...90 {
+            let t = start + Double(frame) / 60
+            drop.held = 30 + min(Double(frame), 20) * 1.2
+            let g = drop.geometry(at: Date(timeIntervalSinceReferenceDate: t), rows: rows, now: t)
+            worst = max(worst, abs(g.head.width - g.tail.width), abs(g.head.midY - g.tail.midY),
+                        abs(g.head.width - rows[0].width), abs(g.head.height - rows[0].height))
+        }
+        #expect(worst < 0.5)
+    }
 }

@@ -194,6 +194,13 @@ final class DropListState {
     @ObservationIgnored private var clock = FrameClock()
     /// Held still where it was put, for previews: a canvas cannot press it.
     @ObservationIgnored var frozen = false
+    /// 0 while the drop sits on its row, 1 while it travels to another. Thinning, the
+    /// tail and the rounding belong to travel only: applied to a drop merely leaning
+    /// towards the pointer on its own row, a narrower head over a lagging, wider tail
+    /// came out as a rectangle with lumps on top and bottom.
+    @ObservationIgnored private(set) var travel: CGFloat = 0
+    /// The size of the row the drop is on or making for.
+    @ObservationIgnored private var goalSize: CGSize = .zero
 
     init() {
         // The head leaves first and a little lively; the tail chases it, softer.
@@ -208,6 +215,8 @@ final class DropListState {
     /// Lifts off from a platter sitting on `frame`.
     func engage(at frame: CGRect) {
         x = frame.midX
+        goalSize = frame.size
+        travel = 0
         headY.jump(to: frame.midY)
         tailY.jump(to: frame.midY)
         headW.jump(to: frame.width)
@@ -225,18 +234,30 @@ final class DropListState {
                   now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> DropGeometry {
         advance(to: date.timeIntervalSinceReferenceDate, rows: rows, now: now)
         let up = max(lift.value, 0)
+        let t = travel
+        // At rest on its row the drop is the row's shape, whole; travelling, it takes
+        // the springs' thinner, drawn-out shape. Blended, so neither switch is seen.
+        func size(_ spring: LensSpring, _ whole: CGFloat) -> CGFloat {
+            whole + (spring.value - whole) * t
+        }
         // The row's own size, not grown past it as the segmented drop grows past its
         // track: grown, it read as a drop over a frame rather than the frame lifting.
-        func box(_ y: LensSpring, _ w: LensSpring, _ h: LensSpring) -> CGRect {
-            CGRect(x: x - w.value / 2, y: y.value - h.value / 2, width: w.value, height: h.value)
+        func box(_ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
+            CGRect(x: x - w / 2, y: y - h / 2, width: w, height: h)
         }
-        let apart = abs(headY.value - tailY.value)
+        let head = box(headY.value, size(headW, goalSize.width), size(headH, goalSize.height))
+        let tail = box(headY.value + (tailY.value - headY.value) * t,
+                       size(tailW, goalSize.width), size(tailH, goalSize.height))
+        let speed = max(abs(headY.velocity), abs(tailY.velocity))
+        // The bridge is cut from the drop's thickness, not its width. From the width it
+        // came out fatter than a short row is tall, and stood out above and below the
+        // drop as two round lumps.
+        let thickness = min(head.width, head.height, tail.width, tail.height)
         return DropGeometry(
-            head: box(headY, headW, headH),
-            tail: box(tailY, tailW, tailH),
-            cornerRadius: DropListMath.cornerRadius(rest: rowRadius,
-                                                    speed: max(abs(headY.velocity), abs(tailY.velocity))),
-            neck: apart > 2 ? min(headW.value, tailW.value) * 0.22 : 0,
+            head: head,
+            tail: tail,
+            cornerRadius: rowRadius + (DropListMath.cornerRadius(rest: rowRadius, speed: speed) - rowRadius) * t,
+            neck: abs(head.midY - tail.midY) > 2 ? thickness * 0.3 : 0,
             lift: up,
             motion: min(max(headY.velocity / 1200, -1), 1),
             maxMagnification: 1.08)
@@ -274,6 +295,12 @@ final class DropListState {
             tailW.step(step.dt)
             tailH.step(step.dt)
             lift.step(step.dt)
+
+            // Travelling once the head is more than a few points off where it is going.
+            goalSize = goal.size
+            let away = abs(headY.value - goalY)
+            let wanted = min(max((away - 6) / 18, 0), 1)
+            travel += (wanted - travel) * min(step.dt * 18, 1)
         }
 
         if DropScript.isEnabled {

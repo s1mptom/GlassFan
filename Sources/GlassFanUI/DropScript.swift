@@ -106,6 +106,9 @@ enum DropScript {
         drag(from: first, legs: [(down * 0.2, 0.5), (0, 0.7), (down * 0.35, 0.8), (0, 0.7),
                                  (down * 0.45, 0.8), (0, 0.8)], "down")
         at(1.6, {})
+        // A nudge: a little way at a middling pace, and stop - where lumps once showed.
+        drag(from: second, legs: [(12, 0.25), (0, 0.8), (-22, 0.35), (0, 0.8), (10, 0.2), (0, 0.6)], "nudge")
+        at(1.4, {})
         drag(from: second, legs: [(-down * 0.5, 1.2), (0, 0.6), (-down * 0.5, 1.2), (0, 0.6)], "up")
         at(2.0, { log("done"); NSApp.terminate(nil) })
     }
