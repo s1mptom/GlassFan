@@ -29,7 +29,9 @@ actual work.
 
 ## Features
 
-- **Per-fan modes** — System (automatic), Fixed speed, or Curve.
+- **Per-fan modes** — System (automatic), Fixed speed, or Curve. On M3 and later,
+  taking a fan from the system takes five to thirteen seconds — the thermal manager has
+  to let go first — and the interface says so rather than pretending to be in charge.
 - **Curves you drag** — temperature against speed, with the point's exact values
   beside the pointer as you set it. A curve can go to 0 rpm: Apple silicon fans stop
   completely when told to, and run steadily well below the SMC's advertised minimum.
@@ -82,7 +84,7 @@ supported.
 | MacBook Pro 14"/16", **M1 Pro** or **M1 Max** (2021) | Supported. Built and tested on an M1 Max (MacBookPro18,2); the M1 Pro models share its SMC layout, fan keys and sensor map. |
 | MacBook Pro 14"/16", **M3 Pro** (2023) | Supported. Measured on a Mac15,7 (16", 6+6 cores): 220 usable sensors, none unnamed. Fan control needs the `Ftst` unlock, which this does automatically — it takes a few seconds to engage. |
 | Mac Studio, **M1 Max / M1 Ultra** | Should work: same chip family and sensor map. Not tested. |
-| Apple silicon Macs, **other M2/M3/M4 chips** | Fan control uses the SMC's standard fan keys, read from the machine itself. Sensors are all shown and named from the layout of the machine's own keys — cores, GPU clusters and heatsinks read as such, numbered rather than labelled. Not tested. |
+| Apple silicon Macs, **other M2/M3/M4 chips** | Fan control uses the SMC's standard fan keys and the same `Ftst` unlock, both read from the machine itself; some M3 machines reportedly have no `Ftst` key, and there control works only while the system already wants the fans running. Sensors are all shown and named from the layout of the machine's own keys — cores, GPU clusters and heatsinks read as such, numbered rather than labelled. Not tested. |
 | **MacBook Air** (no fan) | Temperature monitoring only — the app says the Mac is cooled passively. |
 | Intel Macs | Not supported. |
 
@@ -254,6 +256,12 @@ later does not touch the engine.
 - Above the emergency threshold (Settings) the curve is abandoned and the fans go to
   full speed.
 - **Settings → Release all fans** hands everything back at once.
+- Manual control on M3 and later goes through `Ftst`, and **`Ftst` raised is the Mac's
+  own thermal management switched off**. It is treated as borrowed, never taken: raised
+  only while a fan is actually being held, dropped the moment none is, and dropped again
+  on release, on quit, on a signal, by the watchdog, and at the next startup for whatever
+  was killed before it could. `sudo fanctld --clear-lock` hands it back without needing
+  the daemon that took it to still exist.
 
 ## Measured on the hardware
 
@@ -265,13 +273,23 @@ not assumed:
 - `Ts0*` reads with the SoC here (up 7–16 °C under a CPU load that leaves the flash
   keys `TH0x`/`TH0a`/`TH0b` half a degree *cooler*), where on the M1 family the same
   keys are the SSD. The M1 names are not reused for them.
-- `Tf1*` and `Tf2*` are the SMC's own fan control, one block per fan, not sensors.
-  `Tf14` is `TCDX` — the CPU die aggregate — digit for digit across every sample;
-  `Tf16` (79.6 °C) and `Tf26` (82.4 °C) are the setpoints the automatic control
-  steers to, and held those values through everything the machine was put through.
-  They are shown beside the fans rather than in the sensor list, where they read as
-  the two hottest things on the machine. The gains and flags of the block
-  (`Tf11`, `Tf15`, `Tf1C` and their `Tf2*` twins) are dropped.
+- `Tf1*` and `Tf2*` are the SMC's own control, not sensors — and its two zones are the
+  two **engines**, not the two fans, which the numbering suggests and loading each
+  engine alone disproves: a CPU load moved `Tf1` by 14.0 °C and left `Tf2` within 3.7,
+  a GPU load moved `Tf2` by 15.1 and `Tf1` by 5.1.
+  `Tf16` (79.6 °C) is the CPU zone's setpoint and `Tf26` (82.4 °C) the GPU's, and both
+  held through everything the machine was put through. They are shown beside the fans
+  rather than in the sensor list, where they read as the two hottest things on the
+  machine and can be picked to drive a curve that then never moves a fan. The gains and
+  flags of the block (`Tf11`, `Tf15`, `Tf1C` and their `Tf2*` twins) are dropped.
+- **`TCDX` is not a CPU aggregate.** It is the hotter of those two zones:
+  `TCDX == max(Tf14, Tf24)` held across 138 samples in four experiments — to 0.2 °C in
+  three of them and 0.7 °C in the fourth. Under a CPU load the CPU zone wins every
+  sample; under a GPU load the GPU zone wins most of them, and `TCDX` and `Tf14` part
+  by as much as 9 °C.
+- **The SMC steers by a die zone, not by the hottest core**, which is why a warm
+  machine can sit with its fans stopped: `TCMz` at 71.9 °C while `TCDX` read 48.6,
+  thirty degrees below the 79.6 the controller acts at.
 - Which cores are the performance ones is *not* established. Loading one cluster at a
   time — a default-QoS thread against a background-QoS one, three alternating rounds
   — heats the die as a gradient, not a split: the `Te` block and the `Tp0u`, `Tp0y`,
@@ -309,11 +327,15 @@ Checked on a MacBook Pro 18,2 (M1 Max) on macOS 26/27, not assumed:
 - 2251 SMC keys, 223 of them usable temperatures.
 - `flt` is a little-endian IEEE float; `ioft` is 64-bit little-endian fixed point with
   16 fractional bits; the integer types are big-endian.
-- `F0Md` is not a plain "forced" flag — the system writes its own values into it — so
-  the daemon tracks which fans it holds instead of reading it back.
+- `F0Md` is not a plain "forced" flag — the system writes its own values into it, and 3
+  was seen while the fans were idle and stopped. The daemon used to track which fans it
+  held rather than read the key back, which on this machine was harmless and on an M3 Pro
+  hid a total failure; it now believes the hardware instead, by the SMC's own status byte
+  and by reading the target back.
 
-Sensor names come from cross-checking two open projects against this machine:
-[Stats](https://github.com/exelban/stats) and [iSMC](https://github.com/dkorunic/iSMC).
+Sensor names come from cross-checking the open projects listed under
+[Credits](#credits) against these machines — and, where they had nothing to say, from
+the machine itself.
 
 ## Development
 
@@ -326,6 +348,21 @@ swift test                                   # FanKit and interface logic, no ha
 sudo ./.build/debug/fanctld --clear-lock     # give the thermal management back
 GLASSFAN_SOCKET=/tmp/gf.sock ./.build/debug/fanctld --dev   # unprivileged daemon for UI work
 ```
+
+The hardware experiments behind everything under *Measured on the hardware*. They write
+to the SMC, so they need root, and each puts back what it changed on every way out —
+including on `SIGINT`:
+
+```sh
+sudo ./.build/debug/fanctld --unlock-test 3000 25    # the Ftst unlock, step by step
+sudo ./.build/debug/fanctld --write-test Tf16 60     # is a key writable, and what moves
+sudo ./.build/debug/fanctld --minimum-test --wait    # raise F0Mn, waiting for the window
+sudo ./.build/debug/fanctld --selftest               # does a forced target move the fan
+```
+
+`--write-test` only writes keys on its own list, and refuses to raise a thermal
+setpoint: lowering one asks for more cooling, raising one asks the Mac to run hotter
+than Apple decided it should.
 
 Open `Package.swift` in Xcode and pick the **GlassFanUI** scheme to see every screen in
 previews, fed from a fixture.
@@ -374,9 +411,19 @@ silicon, сделанный под macOS 26 и Liquid Glass.
   (macOS спросит пароль один раз).
 - **Режимы:** Системный, Фиксированный, Кривая. Кривая может опускаться до 0 —
   вентилятор остановится.
+- **На M3 и новее** забрать вентилятор у системы получается не мгновенно: сначала надо,
+  чтобы отошёл штатный термоменеджер, это 5–13 секунд. Всё это время приложение честно
+  показывает, что управления ещё нет, а не делает вид, что командует.
+- **Безопасность:** механизм разблокировки на время выключает штатное терморегулирование
+  мака, поэтому он берётся взаймы — только пока вентилятор реально удерживается, и
+  снимается сразу, как только перестал, а также при выходе, по сигналу, по watchdog и при
+  следующем запуске за того, кого убили. Вернуть управление системе немедленно:
+  `sudo fanctld --clear-lock`.
 - **Выход из приложения** возвращает вентиляторы системе, настройки при этом
   сохраняются и применяются снова при следующем запуске. Закрытие окна — не выход:
   приложение остаётся в меню-баре и продолжает управлять. Падение управление не снимает.
-- **Датчики:** все ~220 с понятными названиями, основные показаны по умолчанию.
+- **Датчики:** все ~220 с понятными названиями, основные показаны по умолчанию. Там, где
+  готовой таблицы для чипа нет, названия выводятся из раскладки ключей самой машины и из
+  её же счётчиков энергии — без нагрузки, просто наблюдением за обычной работой.
 
 </details>
