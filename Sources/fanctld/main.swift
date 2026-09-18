@@ -225,10 +225,16 @@ if CommandLine.arguments.contains("--takeover-test") {
             guard !done else { return }
             done = true
             hardware.releaseAll()
-            try? smc.write("F\(index)Md", value: 0)
-            print(String(format: "restored: F%dMd %.0f, Ftst %.0f",
+            // Verified, and in this order: manual mode goes first, then the unlock.
+            // The old restore wrote both and read them back in the same breath, saw
+            // the values it had just replaced, and announced a failure that had not
+            // happened.
+            let modeBack = smc.writeAndVerify("F\(index)Md", value: 0)
+            let testBack = smc.read("Ftst") == nil || smc.writeAndVerify("Ftst", value: 0)
+            print(String(format: "restored: F%dMd %.0f, Ftst %.0f%@",
                          index, smc.read("F\(index)Md")?.value ?? -1,
-                         smc.read("Ftst")?.value ?? -1))
+                         smc.read("Ftst")?.value ?? -1,
+                         modeBack && testBack ? "" : "   ← NOT FULLY RESTORED, run --clear-lock"))
             fflush(stdout)
         }
         func finish(_ code: Int32) -> Never { restore(); exit(code) }
@@ -316,14 +322,16 @@ if CommandLine.arguments.contains("--clear-lock") {
         let count = Int(smc.read("FNum")?.value ?? 0)
         for index in 0..<count {
             if let mode = smc.read("F\(index)Md")?.value, mode == 1 {
-                try? smc.write("F\(index)Md", value: 0)
-                print("fan \(index): manual mode dropped")
+                let ok = smc.writeAndVerify("F\(index)Md", value: 0)
+                print("fan \(index): manual mode dropped\(ok ? "" : " - FAILED, it still reads 1")")
             }
         }
         if let test = smc.read("Ftst")?.value {
             if test != 0 {
-                try? smc.write("Ftst", value: 0)
-                print(String(format: "Ftst was %.0f, now %.0f", test, smc.read("Ftst")?.value ?? -1))
+                let ok = smc.writeAndVerify("Ftst", value: 0)
+                print(String(format: "Ftst was %.0f, now %.0f%@", test,
+                             smc.read("Ftst")?.value ?? -1,
+                             ok ? "" : "   ← STILL RAISED, the thermal management is off"))
             } else {
                 print("Ftst is already 0: the system has its thermal management")
             }
