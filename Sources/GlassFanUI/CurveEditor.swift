@@ -144,6 +144,12 @@ struct CurveEditor: View {
                 .frame(width: 13, height: 13)
                 .scaleEffect(dragging == index ? 1.25 : 1)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: dragging)
+                // Drawn at thirteen points, aimed at as twenty-six. A miss does not do
+                // nothing here - it falls through to the editor's own double-click and
+                // *adds* a point, so a hand that was a few pixels off removing one ends
+                // up with two. The circle is unchanged; only the target around it grows.
+                .frame(width: 26, height: 26)
+                .contentShape(Circle())
                 // Before `.position`, not after. A positioned view takes all the space
                 // its parent offers - only its drawing is at the point - so a hover
                 // attached afterwards covers the whole plot. Every handle then claimed
@@ -292,8 +298,10 @@ struct CurveEditor: View {
             // tooltip, which was small, floated over the axis labels and looked
             // like it was trying to squeeze into the interface. A caption under
             // the plot is always there and in nobody's way.
-            Text(L10n.t("Двойной клик — добавить точку, по точке — убрать",
-                        "Double-click to add a point, or on one to remove it"))
+            // Both halves say "double", because the short form did not and was read
+            // as "click a point to remove it" - which does nothing, and looks broken.
+            Text(L10n.t("Двойной клик: по пустому месту — добавить точку, по точке — убрать её",
+                        "Double-click empty space to add a point, double-click a point to remove it"))
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.ink.opacity(0.35))
                 .fixedSize()
