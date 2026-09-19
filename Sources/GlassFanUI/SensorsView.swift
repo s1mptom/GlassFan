@@ -118,15 +118,24 @@ struct SensorsView: View {
             DaemonMissingNotice().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             let listing = self.listing
-            VStack(spacing: 0) {
+            VStack(spacing: Metrics.gap) {
                 toolbar(listing).riseIn(0.02)
-                columnHeader.riseIn(0.03)
-                if listing.groups.isEmpty {
-                    noMatches(listing)
-                } else {
-                    sensorList(listing.groups)
+                VStack(spacing: 0) {
+                    columnHeader
+                    if listing.groups.isEmpty {
+                        noMatches(listing)
+                    } else {
+                        sensorList(listing.groups)
+                    }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .clipShape(RoundedRectangle(cornerRadius: Metrics.radius, style: .continuous))
+                .card(padding: 0)
+                .riseIn(0.03)
             }
+            .padding(.horizontal, Metrics.page)
+            .padding(.top, Metrics.gap)
+            .padding(.bottom, Metrics.page)
             .task(id: sort) { await keepHeatRank() }
         }
     }
@@ -164,12 +173,12 @@ struct SensorsView: View {
                  ? L10n.t("На графике пока ничего нет", "Nothing is on the chart yet")
                  : L10n.t("Ничего не нашлось", "Nothing matches"))
                 .font(.system(size: 13))
-                .foregroundStyle(Palette.ink.opacity(0.45))
+                .foregroundStyle(Palette.ink.opacity(0.6))
             if chartedEmpty {
                 Text(L10n.t("Отметьте датчик значком графика слева от названия.",
                             "Mark a sensor with the chart icon to the left of its name."))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.ink.opacity(0.3))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
             } else if listing.hiddenMatches > 0 {
                 // The search found something, just not under this filter: say so,
                 // instead of "nothing" for a sensor that is one click away.
@@ -183,8 +192,8 @@ struct SensorsView: View {
             } else {
                 Text(L10n.t("Попробуйте другое название или ключ датчика.",
                             "Try another name, or the sensor key."))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.ink.opacity(0.3))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -218,20 +227,20 @@ struct SensorsView: View {
                         }
                     } header: {
                         SectionCaption(text: group.title)
-                            .padding(.top, 20)
-                            .padding(.bottom, 8)
+                            .padding(.top, 14)
+                            .padding(.bottom, 4)
                     }
                 }
             }
-            .padding(.horizontal, 30)
-            .padding(.bottom, 24)
+            .padding(.horizontal, Metrics.inset)
+            .padding(.bottom, Metrics.gap)
         }
         .scrollContentBackground(.hidden)
     }
 
     private func toolbar(_ listing: Listing) -> some View {
         let total = client.snapshot?.sensors.count ?? 0
-        return HStack(spacing: 14) {
+        return HStack(spacing: Metrics.gap) {
             GlassSearchField(
                 placeholder: L10n.t("Поиск по \(total) датчикам", "Search \(total) sensors"),
                 text: $search
@@ -241,21 +250,17 @@ struct SensorsView: View {
                 items: SensorFilter.allCases.map { .init(value: $0, title: $0.title) },
                 selection: $filter.animation(.smooth(duration: 0.3)),
                 segmentWidth: nil,
-                fontSize: 11.5
+                fontSize: 12
             )
             .fixedSize()
 
-            Spacer()
-
             Text(L10n.t("\(listing.shown) из \(total)", "\(listing.shown) of \(total)"))
-                .font(.system(size: 11.5))
+                .font(.system(size: 12))
                 .monospacedDigit()
-                .foregroundStyle(Palette.ink.opacity(0.3))
+                .foregroundStyle(Palette.ink.opacity(0.5))
                 .contentTransition(.identity)
+                .frame(minWidth: 64, alignment: .trailing)
         }
-        .padding(.horizontal, 30)
-        .padding(.top, 16)
-        .padding(.bottom, 10)
     }
 
     /// Column titles that sort the list, lined up over the row's own columns.
@@ -270,11 +275,10 @@ struct SensorsView: View {
             Spacer(minLength: 0)
             header(L10n.t("Температура", "Temperature"), sort: .temperature)
         }
-        .padding(.horizontal, 30)
-        .padding(.bottom, 6)
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 6)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Palette.ink.opacity(0.08)).frame(height: 0.5)
-                .padding(.horizontal, 22)
         }
     }
 
@@ -305,11 +309,11 @@ struct SensorsView: View {
             HStack(spacing: 4) {
                 if column == .temperature { arrow(visible: active) }
                 Text(title.uppercased())
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .tracking(0.6)
                 if column != .temperature { arrow(visible: active) }
             }
-            .foregroundStyle(Palette.ink.opacity(active ? 0.7 : 0.38))
+            .foregroundStyle(Palette.ink.opacity(active ? 0.75 : 0.45))
             .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
@@ -386,7 +390,7 @@ struct SensorRow: View {
             // Probes and diodes a step quieter than the parts they belong to, so
             // under "All" the named rows still read first.
             Text(info.name)
-                .font(.system(size: 12.5))
+                .font(.system(size: 13))
                 .foregroundStyle(Palette.ink.opacity(tracked ? 0.9 : info.essential ? 0.78 : 0.55))
                 .frame(width: Self.nameWidth, alignment: .leading)
                 .lineLimit(1)
@@ -394,9 +398,9 @@ struct SensorRow: View {
                 .help(info.name)
 
             Text(sensor.key)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .monospacedDigit()
-                .foregroundStyle(Palette.ink.opacity(0.3))
+                .foregroundStyle(Palette.ink.opacity(0.4))
                 .frame(width: Self.keyWidth, alignment: .leading)
 
             // Scaled rather than measured: a GeometryReader in every one of a
@@ -411,12 +415,12 @@ struct SensorRow: View {
             .frame(height: 3)
 
             Text(Format.temperatureFine(sensor.value))
-                .font(.system(size: 12.5))
+                .font(.system(size: 13, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(Palette.ink.opacity(tracked ? 1 : 0.78))
                 .frame(width: 66, alignment: .trailing)
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)

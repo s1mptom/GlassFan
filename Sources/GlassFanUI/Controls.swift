@@ -67,9 +67,9 @@ struct SectionCaption: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10.5, weight: .medium))
+            .font(.system(size: 11, weight: .medium))
             .tracking(0.7)
-            .foregroundStyle(Palette.ink.opacity(0.4))
+            .foregroundStyle(Palette.ink.opacity(0.45))
     }
 }
 
