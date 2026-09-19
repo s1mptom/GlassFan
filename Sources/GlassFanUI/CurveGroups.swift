@@ -51,13 +51,7 @@ struct CurveGroups: View {
                 .foregroundStyle(nothingChosen ? Palette.heat.opacity(0.9) : Palette.ink.opacity(0.3))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Palette.ink.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Palette.ink.opacity(0.08), lineWidth: 0.5))
-        )
+        .card(padding: 14)
     }
 
     private var nothingChosen: Bool { curves.allSatisfy { $0.sensorKeys.isEmpty } }

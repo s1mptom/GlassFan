@@ -28,13 +28,13 @@ struct FansView: View {
         } else if fans.isEmpty {
             NoFansNotice().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            HStack(alignment: .top, spacing: 26) {
+            HStack(alignment: .top, spacing: Metrics.gap) {
                 sidebar.riseIn(0.02)
                 if let fan { detail(fan).riseIn(0.10) }
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 18)
-            .padding(.bottom, 24)
+            .padding(.horizontal, Metrics.page)
+            .padding(.top, Metrics.gap)
+            .padding(.bottom, Metrics.page)
         }
     }
 
@@ -45,11 +45,13 @@ struct FansView: View {
     private var sidebar: some View {
         ScrollView(.vertical, showsIndicators: false) { sidebarContent }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(width: 212)
+            .frame(width: Self.sidebarWidth)
     }
 
+    private static let sidebarWidth: CGFloat = 232
+
     private var sidebarContent: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Metrics.gap) {
             ForEach(fans) { item in
                 fanRow(item)
             }
@@ -64,7 +66,7 @@ struct FansView: View {
                 smcTargetBox(zoneTargets)
             }
         }
-        .frame(width: 212)
+        .frame(width: Self.sidebarWidth)
     }
 
     /// What the SMC's own control is aiming for, whether or not we are holding the
@@ -91,45 +93,40 @@ struct FansView: View {
             Text(L10n.t("Температура, к которой ведёт штатное управление",
                         "What the automatic control steers towards"))
                 .font(.system(size: 10))
-                .foregroundStyle(Palette.ink.opacity(0.3))
+                .foregroundStyle(Palette.ink.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Palette.ink.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Palette.ink.opacity(0.08), lineWidth: 0.5))
-        )
+        .card(padding: 14)
     }
 
     private func fanRow(_ item: FanReading) -> some View {
         let isSelected = item.index == (fan?.index ?? -1)
-        return HStack(spacing: 14) {
+        return HStack(spacing: Metrics.gap) {
             FanDial(rpm: item.actualRPM, limits: item.limits, controlled: item.forced,
                     alert: item.alerting,
-                    size: 58, showsCaption: false, showsValue: false)
+                    size: 52, showsCaption: false, showsValue: false)
             VStack(alignment: .leading, spacing: 1) {
                 Text(L10n.t("Вентилятор \(item.index + 1)", "Fan \(item.index + 1)"))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.ink.opacity(0.5))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink.opacity(0.6))
                 Text(Format.rpm(item.actualRPM))
-                    .font(.system(size: 21, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(item.forced ? Palette.ink : Palette.ink.opacity(0.86))
                 Text(modeCaption(item))
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(item.failureCaption != nil ? Palette.critical
-                                     : item.forced ? Palette.calm : Palette.ink.opacity(0.4))
+                                     : item.forced ? Palette.calm : Palette.ink.opacity(0.5))
             }
             Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.radius, style: .continuous)
                 .fill(Palette.ink.opacity(isSelected ? 0.075
                                           : (hoveredFan == item.index ? 0.055 : 0.03)))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .overlay(RoundedRectangle(cornerRadius: Metrics.radius, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(isSelected ? 0.16
                                                       : (hoveredFan == item.index ? 0.12 : 0.07)),
                                   lineWidth: 0.5))
@@ -198,9 +195,9 @@ struct FansView: View {
                 Text("0 – \(Format.rpm(fan.limits.maxRPM)) " + L10n.t("об/мин", "rpm")
                      + L10n.t(" · минимум SMC \(Format.rpm(fan.limits.minRPM))",
                               " · SMC minimum \(Format.rpm(fan.limits.minRPM))"))
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12))
                     .monospacedDigit()
-                    .foregroundStyle(Palette.ink.opacity(0.42))
+                    .foregroundStyle(Palette.ink.opacity(0.6))
             }
 
             // One container whose size never depends on the mode, so switching modes
@@ -217,7 +214,7 @@ struct FansView: View {
             // cross-fade ties the two halves of the same gesture together.
             .animation(.easeInOut(duration: 0.2), value: settingsBinding.wrappedValue.mode)
 
-            HStack(spacing: 26) {
+            HStack(spacing: 32) {
                 LabelledSlider(
                     title: L10n.t("Гистерезис", "Hysteresis"),
                     valueText: String(format: "%.0f °C", settingsBinding.wrappedValue.hysteresis),
@@ -233,6 +230,7 @@ struct FansView: View {
             }
             .opacity(settingsBinding.wrappedValue.mode == .curve ? 1 : 0.35)
             .disabled(settingsBinding.wrappedValue.mode != .curve)
+            .card()
         }
     }
 
@@ -321,10 +319,10 @@ struct FansView: View {
     }
 
     private var panelBackground: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(Palette.ink.opacity(0.05))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Palette.ink.opacity(0.11), lineWidth: 0.5))
+        RoundedRectangle(cornerRadius: Metrics.radius, style: .continuous)
+            .fill(Palette.ink.opacity(0.045))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.radius, style: .continuous)
+                .strokeBorder(Palette.ink.opacity(0.09), lineWidth: 0.5))
     }
 
     // MARK: Config plumbing
