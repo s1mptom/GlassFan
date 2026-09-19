@@ -60,7 +60,7 @@ struct OverviewView: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             if client.snapshot?.fans.isEmpty == false {
                 dials.riseIn(0.02)
             } else if client.snapshot != nil {
@@ -69,43 +69,51 @@ struct OverviewView: View {
                 Text(L10n.t("Пассивное охлаждение — в этом Mac нет вентиляторов",
                             "Passive cooling - this Mac has no fans"))
                     .font(.system(size: 12))
-                    .foregroundStyle(Palette.ink.opacity(0.4))
-                    .padding(.horizontal, 30)
-                    .padding(.top, 22)
+                    .foregroundStyle(Palette.ink.opacity(0.5))
                     .riseIn(0.02)
             }
             statsRow.riseIn(0.10)
             chart.riseIn(0.18)
         }
+        .padding(.horizontal, Metrics.page)
+        .padding(.top, Metrics.gap)
+        .padding(.bottom, Metrics.page)
     }
 
     // MARK: Fans
 
     private var dials: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: Metrics.gap) {
             ForEach(client.snapshot?.fans ?? []) { fan in
-                HStack(spacing: 20) {
+                HStack(alignment: .center, spacing: Metrics.inset) {
                     FanDial(rpm: fan.actualRPM, limits: fan.limits, controlled: fan.forced,
-                            alert: fan.alerting)
+                            alert: fan.alerting, size: 108)
 
-                    VStack(alignment: .leading, spacing: 9) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text(L10n.t("Вентилятор \(fan.index + 1)", "Fan \(fan.index + 1)"))
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Palette.ink.opacity(0.92))
 
                         modeChip(fan)
 
                         Text(subtitle(for: fan))
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.ink.opacity(0.34))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.ink.opacity(0.6))
                     }
                     Spacer(minLength: 0)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        SectionCaption(text: L10n.t("Диапазон", "Range"))
+                        Text("0 – \(Format.rpm(fan.limits.maxRPM)) " + L10n.t("об/мин", "rpm"))
+                            .font(.system(size: 12))
+                            .monospacedDigit()
+                            .foregroundStyle(Palette.ink.opacity(0.6))
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
-                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+                .card()
             }
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 22)
     }
 
     private func modeChip(_ fan: FanReading) -> some View {
@@ -142,7 +150,7 @@ struct OverviewView: View {
                     .foregroundStyle(Palette.calm)
             }
             Text(label)
-                .font(.system(size: 11.5, weight: .medium))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(accent)
         }
         .padding(.horizontal, 12)
@@ -180,17 +188,17 @@ struct OverviewView: View {
                 if index > 0 {
                     Rectangle()
                         .fill(Palette.ink.opacity(0.1))
-                        .frame(width: 0.5, height: 30)
-                        .padding(.horizontal, 15)
+                        .frame(width: 0.5, height: 32)
+                        .padding(.horizontal, Metrics.inset)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Format.temperature(item.1))
-                        .font(.system(size: 25, weight: .medium))
+                        .font(.system(size: 22, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(heatColor(item.1))
                     Text(item.0)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.ink.opacity(0.42))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink.opacity(0.6))
                         .lineLimit(1)
                 }
             }
@@ -199,11 +207,10 @@ struct OverviewView: View {
                 items: TimeWindow.allCases.map { .init(value: $0, title: $0.title) },
                 selection: $window,
                 segmentWidth: nil,
-                fontSize: 11
+                fontSize: 12
             )
         }
-        .padding(.horizontal, 30)
-        .padding(.top, 26)
+        .card(padding: Metrics.gap)
     }
 
     /// One walk over the readings, and each group speaks through its named parts:
@@ -255,9 +262,8 @@ struct OverviewView: View {
                 }
             }
         }
-        .padding(.horizontal, 30)
-        .padding(.top, 18)
-        .padding(.bottom, 22)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .card()
     }
 }
 

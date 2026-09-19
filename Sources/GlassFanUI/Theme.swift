@@ -26,6 +26,37 @@ extension Color {
 
 /// Chart colors. Fixed order, never cycled, validated for colour-vision deficiency
 /// and contrast against both surfaces before use.
+/// The one grid every screen is laid out on.
+///
+/// The screens had grown their own margins - 28 here, 30 there, 16 to 22 at the
+/// top - and it showed as a window that never quite lined up with itself.
+enum Metrics {
+    /// From the window's edges to the content; the left edge lines up with the
+    /// first traffic light.
+    static let page: CGFloat = 20
+    /// Between blocks, and between the toolbar row and the first block.
+    static let gap: CGFloat = 12
+    /// Inside a card.
+    static let inset: CGFloat = 16
+    /// A card's corners.
+    static let radius: CGFloat = 14
+}
+
+extension View {
+    /// A block of the page: content inset on a faint, rimmed surface.
+    func card(padding: CGFloat = Metrics.inset) -> some View {
+        self
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: Metrics.radius, style: .continuous)
+                    .fill(Palette.ink.opacity(0.045))
+                    .overlay(RoundedRectangle(cornerRadius: Metrics.radius, style: .continuous)
+                        .strokeBorder(Palette.ink.opacity(0.09), lineWidth: 0.5))
+            )
+    }
+}
+
 enum Palette {
     static let series: [Color] = [
         .adaptive(light: "#2a78d6", dark: "#3987e5"), // blue
