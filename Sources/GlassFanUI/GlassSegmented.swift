@@ -302,9 +302,11 @@ final class LensState {
 
         // Handed to the next turn of the run loop: they change state, and this
         // runs while the lens's views are being drawn.
-        // Arrived once within a point and a half: the rest of a spring's approach
-        // is too small to see and too long to wait for.
-        if let arrival = onArrival, x.isResting(within: 1.5), width.isResting(within: 1.5) {
+        // Arrived once over the middle half of the segment it is making for: the choice
+        // is plain by then, and what is left of the glide - a tenth of a second or more
+        // of a spring's approach - was being waited out before anything changed. The
+        // drop finishes its glide and settles after the choice, not before it.
+        if let arrival = onArrival, abs(x.value - x.target) <= max(width.target / 4, 1.5) {
             onArrival = nil
             DispatchQueue.main.async(execute: arrival)
         }

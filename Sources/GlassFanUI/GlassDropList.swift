@@ -199,8 +199,9 @@ final class DropListState {
     /// towards the pointer on its own row, a narrower head over a lagging, wider tail
     /// came out as a rectangle with lumps on top and bottom.
     @ObservationIgnored private(set) var travel: CGFloat = 0
-    /// The size of the row the drop is on or making for.
+    /// The size and middle of the row the drop is on or making for.
     @ObservationIgnored private var goalSize: CGSize = .zero
+    @ObservationIgnored private var goalMid: CGFloat = 0
 
     init() {
         // The head leaves first and a little lively; the tail chases it, softer.
@@ -298,6 +299,7 @@ final class DropListState {
 
             // Travelling once the head is more than a few points off where it is going.
             goalSize = goal.size
+            goalMid = goal.midY
             let away = abs(headY.value - goalY)
             let wanted = min(max((away - 6) / 18, 0), 1)
             travel += (wanted - travel) * min(step.dt * 18, 1)
@@ -313,7 +315,11 @@ final class DropListState {
         // while the drop's views are being drawn. Arrived once within a point and a
         // half: the rest of a spring's approach is too small to see.
         let still = [headY, tailY, headW, headH, tailW, tailH].allSatisfy { $0.isResting(within: 1.5) }
-        if let arrival = onArrival, held == nil, still {
+        // Arrived once its head is over the middle half of the row it is making for. It
+        // used to wait for every spring to come to rest - the lazy tail's included - and
+        // the choice changed most of a second after the click; the drop finishes
+        // flowing and settles after the choice, not before it.
+        if let arrival = onArrival, held == nil, abs(headY.value - goalMid) <= max(goalSize.height / 4, 1.5) {
             onArrival = nil
             DispatchQueue.main.async(execute: arrival)
         }
