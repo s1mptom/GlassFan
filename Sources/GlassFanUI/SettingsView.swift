@@ -168,10 +168,10 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Button(L10n.t("Обновить", "Update")) { installer.install() }
                     .buttonStyle(.glassProminent)
-            case .working:
+            case .working(let job):
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(L10n.t("Выполняю…", "Working…"))
+                    Text(DaemonAbsence.working(job).title)
                         .font(.system(size: 12)).foregroundStyle(Palette.ink.opacity(0.6))
                 }
             case .failed(let message):

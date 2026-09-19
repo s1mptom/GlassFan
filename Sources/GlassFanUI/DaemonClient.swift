@@ -30,6 +30,9 @@ final class DaemonClient {
     var history: [HistorySample] { feed.history }
     private(set) var isConnected = false
     private(set) var lastError: String?
+    /// When the daemon went quiet: contact lost, or the first attempt refused. Nil
+    /// while connected. Tells a restart apart from a daemon that is not coming back.
+    private(set) var quietSince: Date?
 
     private var fd: Int32 = -1
     private var readerThread: Thread?
@@ -96,6 +99,7 @@ final class DaemonClient {
         guard result == 0 else {
             close(socketFD)
             lastError = L10n.t("Демон не отвечает", "Daemon is not responding")
+            if quietSince == nil { quietSince = Date() }
             return
         }
 
@@ -105,6 +109,7 @@ final class DaemonClient {
         fd = socketFD
         isConnected = true
         lastError = nil
+        quietSince = nil
         send(.hello)
 
         let thread = Thread { [weak self] in self?.readLoop(socketFD) }
@@ -136,6 +141,24 @@ final class DaemonClient {
         isConnected = false
         fd = -1
         lastError = L10n.t("Связь с демоном потеряна", "Lost contact with the daemon")
+        quietSince = Date()
+        reconnectSoon()
+    }
+
+    /// Looks again every half second for a while after contact is lost.
+    ///
+    /// A lost connection is nearly always the daemon restarting - an update, a
+    /// reinstall - and the new one is listening within a second or two. The
+    /// three-second timer left the window without data for up to three seconds
+    /// more than that.
+    private func reconnectSoon() {
+        Task { @MainActor [weak self] in
+            for _ in 0..<12 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, !self.isConnected else { return }
+                self.connect()
+            }
+        }
     }
 
     private func apply(_ message: DaemonMessage) {

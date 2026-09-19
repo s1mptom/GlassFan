@@ -249,46 +249,10 @@ struct MainWindow: View {
     }
 
     private var status: some View {
-        HStack(spacing: 7) {
-            LiveDot(active: client.isConnected)
-            Text(client.isConnected ? L10n.t("на связи", "connected")
-                                    : L10n.t("нет связи", "offline"))
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.ink.opacity(0.55))
-        }
-        // The toolbar sets its last item sixteen points from the edge; the page's
-        // margin is twenty.
-        .padding(.trailing, 4)
-    }
-
-    /// The window's own title bar is hidden, so this row carries the tabs and leaves
-    /// room for the traffic lights on the left.
-    private var header: some View {
-        HStack(spacing: 20) {
-            Color.clear.frame(width: 72, height: 1)
-
-            Spacer(minLength: 0)
-
-            GlassSegmented(
-                items: Screen.allCases.map { .init(value: $0, title: $0.title) },
-                selection: $screen,
-                segmentWidth: nil
-            )
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 7) {
-                LiveDot(active: client.isConnected)
-                Text(client.isConnected ? L10n.t("на связи", "connected")
-                                        : L10n.t("нет связи", "offline"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.ink.opacity(0.45))
-            }
-            .frame(width: 96, alignment: .trailing)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 4)
+        ConnectionStatus()
+            // The toolbar sets its last item sixteen points from the edge; the
+            // page's margin is twenty.
+            .padding(.trailing, 4)
     }
 }
 

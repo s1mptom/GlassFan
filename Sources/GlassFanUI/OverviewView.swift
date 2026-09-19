@@ -289,51 +289,59 @@ struct DaemonMissingNotice: View {
     @Environment(DaemonInstaller.self) private var installer
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "fan.badge.automatic")
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Palette.ink.opacity(0.55))
+        DaemonAbsenceReader { absence in
+            DaemonAbsenceView(absence: absence) { installer.install() }
+        }
+    }
+}
 
-            Text(L10n.t("Управление вентиляторами не установлено",
-                        "Fan control is not installed yet"))
+/// The window's stand-in for a screen while there is no daemon to fill it.
+struct DaemonAbsenceView: View {
+    let absence: DaemonAbsence
+    let install: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: absence == .silent ? "exclamationmark.triangle" : "fan.badge.automatic")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(absence == .silent ? Palette.heat : Palette.ink.opacity(0.55))
+
+            Text(absence.title)
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(Palette.ink)
 
-            Text(L10n.t("Крутить вентиляторы может только процесс с правами администратора. Приложение поставит его само — macOS спросит пароль.",
-                        "Only a process with administrator rights can drive the fans. The app installs one itself; macOS will ask for your password."))
+            Text(absence.detail)
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.ink.opacity(0.45))
+                .foregroundStyle(Palette.ink.opacity(0.5))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 430)
                 .fixedSize(horizontal: false, vertical: true)
 
-            switch installer.status {
-            case .working:
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(L10n.t("Устанавливаю…", "Installing…"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.ink.opacity(0.6))
-                }
-                .frame(height: 32)
+            switch absence {
+            case .working, .connecting:
+                ProgressView().controlSize(.small)
+                    .frame(height: 32)
+
+            case .silent:
+                button(L10n.t("Переустановить", "Reinstall"))
 
             case .failed(let message):
                 Text(message)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(Palette.critical)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 430)
-                installButton
+                button(L10n.t("Установить", "Install"))
 
-            default:
-                installButton
+            case .notInstalled:
+                button(L10n.t("Установить", "Install"))
             }
         }
         .riseIn(0.05)
     }
 
-    private var installButton: some View {
-        Button(L10n.t("Установить", "Install")) { installer.install() }
+    private func button(_ title: String) -> some View {
+        Button(title, action: install)
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .frame(height: 32)

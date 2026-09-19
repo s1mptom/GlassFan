@@ -159,6 +159,23 @@ private struct PreviewShell: View {
     .preferredColorScheme(.dark)
 }
 
+/// What stands in for a screen while there is no daemon, in each of its states.
+#Preview("No daemon") {
+    let states: [DaemonAbsence] = [.working(.update), .connecting, .silent, .notInstalled]
+    Grid(horizontalSpacing: 1, verticalSpacing: 1) {
+        GridRow { cell(states[0]); cell(states[1]) }
+        GridRow { cell(states[2]); cell(states[3]) }
+    }
+    .background(Palette.ink.opacity(0.1))
+    .preferredColorScheme(.dark)
+}
+
+private func cell(_ absence: DaemonAbsence) -> some View {
+    DaemonAbsenceView(absence: absence) {}
+        .frame(width: 520, height: 300)
+        .background(Color(white: 0.16))
+}
+
 #Preview("Menu bar") {
     MenuBarPanel()
         .environment(DaemonClient.demo())

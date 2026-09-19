@@ -20,11 +20,28 @@ final class DaemonInstaller {
         /// old rules - a curve that goes to zero, say, with a daemon that still
         /// floors it at the SMC minimum.
         case outdated
-        case working
+        case working(Job)
         case failed(String)
     }
 
+    /// What a `working` installer is doing, so the window can say so.
+    enum Job: Equatable { case install, update, reinstall, remove }
+
     private(set) var status: Status = .notInstalled
+
+    /// Looked up straight away rather than on the window's first task: until then
+    /// the status says "not installed", and a window that draws before that task
+    /// runs would offer an Install button for a daemon that is right there.
+    init() {
+        refresh()
+    }
+
+#if DEBUG
+    /// A fixed status for previews, whatever this Mac has installed.
+    init(previewing status: Status) {
+        self.status = status
+    }
+#endif
 
     static let daemonPath = "/usr/local/libexec/glassfan/fanctld"
     static let plistPath = "/Library/LaunchDaemons/com.glassfan.fanctld.plist"
@@ -54,21 +71,32 @@ final class DaemonInstaller {
     }
 
     func install() {
-        run(script: "install-daemon.sh", expecting: .installed)
+        let job: Job
+        switch status {
+        case .outdated: job = .update
+        case .installed: job = .reinstall
+        default: job = .install
+        }
+        run(script: "install-daemon.sh", job: job, expecting: .installed)
     }
 
     func uninstall() {
-        run(script: "uninstall-daemon.sh", expecting: .notInstalled)
+        run(script: "uninstall-daemon.sh", job: .remove, expecting: .notInstalled)
     }
 
-    private func run(script name: String, expecting success: Status) {
+    private func run(script name: String, job: Job, expecting success: Status) {
         guard let url = Bundle.main.url(forResource: name, withExtension: nil) else {
             status = .failed(L10n.t("В приложении нет \(name)", "\(name) is missing from the app"))
             return
         }
-        status = .working
+        status = .working(job)
 
         Task { @MainActor in
+            // The script holds the main thread from the password dialog until the
+            // new daemon is in place. Started straight away, it ran before the
+            // window had drawn "working", and the button just pressed stayed on
+            // screen the whole time; a moment's pause lets that frame through.
+            try? await Task.sleep(for: .milliseconds(100))
             // AppleScript's `quoted form of` shell-quotes the path, so a bundle living
             // somewhere with spaces still works.
             let source = """

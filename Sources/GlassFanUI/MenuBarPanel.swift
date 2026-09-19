@@ -56,13 +56,7 @@ struct MenuBarPanel: View {
         HStack {
             Text("GlassFan").font(.system(size: 14, weight: .semibold))
             Spacer()
-            HStack(spacing: 6) {
-                LiveDot(active: client.isConnected)
-                Text(client.isConnected ? L10n.t("на связи", "connected")
-                                        : L10n.t("нет связи", "offline"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.ink.opacity(0.45))
-            }
+            ConnectionStatus(fontSize: 11, opacity: 0.45)
         }
     }
 
@@ -153,15 +147,29 @@ struct MenuBarPanel: View {
     }
 
     private var notRunning: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.t("Управление не установлено", "Fan control is not installed"))
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(Palette.heat)
-            Text(L10n.t("Открой окно и нажми «Установить» — macOS спросит пароль.",
-                        "Open the window and press Install; macOS will ask for your password."))
-                .font(.system(size: 11.5))
-                .foregroundStyle(Palette.ink.opacity(0.45))
-                .fixedSize(horizontal: false, vertical: true)
+        DaemonAbsenceReader { absence in
+            VStack(alignment: .leading, spacing: 10) {
+                Text(absence.title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(absence.isTransient ? Palette.ink.opacity(0.85) : Palette.heat)
+                Text(hint(for: absence))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.ink.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func hint(for absence: DaemonAbsence) -> String {
+        switch absence {
+        case .working, .connecting:
+            return L10n.t("Через пару секунд всё вернётся.", "Back in a couple of seconds.")
+        case .silent:
+            return L10n.t("Открой окно и нажми «Переустановить» — macOS спросит пароль.",
+                          "Open the window and press Reinstall; macOS will ask for your password.")
+        case .notInstalled, .failed:
+            return L10n.t("Открой окно и нажми «Установить» — macOS спросит пароль.",
+                          "Open the window and press Install; macOS will ask for your password.")
         }
     }
 }
