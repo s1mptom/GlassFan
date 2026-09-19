@@ -137,9 +137,9 @@ struct CurveEditor: View {
             Text(learnedFloor == nil
                  ? L10n.t("\(Format.rpm(shown)) · минимум SMC", "\(Format.rpm(shown)) · SMC minimum")
                  : L10n.t("\(Format.rpm(shown)) · ниже не крутит", "\(Format.rpm(shown)) · will not go below"))
-                .font(.system(size: 9.5))
+                .font(.system(size: 11))
                 .monospacedDigit()
-                .foregroundStyle(Palette.ink.opacity(0.32))
+                .foregroundStyle(Palette.ink.opacity(0.45))
                 .position(x: plot.maxX - 58, y: y - 9)
         }
         .allowsHitTesting(false)
@@ -298,7 +298,7 @@ struct CurveEditor: View {
                 context.fill(halo, with: .color(role.colour.opacity(0.22)))
                 context.fill(dot, with: .color(role == .idle ? Palette.ink.opacity(0.6) : role.colour))
                 let label = context.resolve(Text(Format.temperature(temp))
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .monospacedDigit()
                     .foregroundStyle(role == .idle ? Palette.ink.opacity(0.45) : role.colour))
                 context.draw(label, at: CGPoint(x: at.x + 9, y: at.y - 9), anchor: .leading)
@@ -417,21 +417,21 @@ struct CurveEditor: View {
             Text(L10n.t("Двойной клик: по пустому месту — добавить точку, по точке — убрать её",
                         "Double-click empty space to add a point, double-click a point to remove it"))
                 .font(.system(size: 11))
-                .foregroundStyle(Palette.ink.opacity(0.35))
+                .foregroundStyle(Palette.ink.opacity(0.45))
                 .fixedSize()
                 .offset(x: plot.minX, y: plot.maxY + 28)
             ForEach([40.0, 60.0, 80.0, 100.0], id: \.self) { temperature in
                 Text("\(Int(temperature))°")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.ink.opacity(0.3))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
                     .position(x: position(CurvePoint(temperature: temperature, rpm: limits.minRPM), in: plot).x,
                               y: plot.maxY + 13)
             }
             ForEach([0.0, 0.5, 1.0], id: \.self) { fraction in
                 Text(Format.rpm(fraction * limits.maxRPM))
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .monospacedDigit()
-                    .foregroundStyle(Palette.ink.opacity(0.3))
+                    .foregroundStyle(Palette.ink.opacity(0.45))
                     .position(x: plot.minX - 20, y: plot.maxY - plot.height * fraction)
             }
         }
@@ -485,8 +485,8 @@ private struct CurveReadout: View {
                 .monospacedDigit()
                 .foregroundStyle(Palette.ink)
             Text(caption)
-                .font(.system(size: 9.5))
-                .foregroundStyle(Palette.ink.opacity(0.45))
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.ink.opacity(0.5))
         }
     }
 }

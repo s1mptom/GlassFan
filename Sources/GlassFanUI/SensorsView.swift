@@ -327,7 +327,7 @@ struct SensorRow: View {
     static let spacing: CGFloat = 14
     static let markerWidth: CGFloat = 14
     static let nameWidth: CGFloat = 250
-    static let keyWidth: CGFloat = 46
+    static let keyWidth: CGFloat = 56
 
     @Environment(DaemonClient.self) private var client
     let sensor: SensorReading

@@ -66,6 +66,15 @@ struct TimeChart: View {
         return (low - padding)...(high + padding)
     }
 
+    /// The newest time a tick may still be labelled at. A tick closer than this to
+    /// the right edge has no room for its label: the chart cut it to "1…", or,
+    /// unclipped, sliced it through at the plot's edge.
+    private var lastLabelledDate: Date? {
+        let dates = points.lazy.map(\.date)
+        guard let first = dates.min(), let last = dates.max(), last > first else { return nil }
+        return last.addingTimeInterval(-last.timeIntervalSince(first) * 0.035)
+    }
+
     var body: some View {
         Chart {
             if areaUnderFirst, let firstSeries {
@@ -127,20 +136,21 @@ struct TimeChart: View {
                 AxisValueLabel {
                     if let number = value.as(Double.self) {
                         Text(valueFormat(number))
-                            .font(.system(size: 10))
-                            .foregroundStyle(Palette.ink.opacity(0.32))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.ink.opacity(0.45))
                     }
                 }
             }
         }
         .chartXAxis {
+            let limit = lastLabelledDate
             AxisMarks(values: .automatic(desiredCount: 5)) { value in
                 AxisGridLine().foregroundStyle(Palette.ink.opacity(0.05))
                 AxisValueLabel {
-                    if let date = value.as(Date.self) {
+                    if let date = value.as(Date.self), limit.map({ date <= $0 }) ?? true {
                         Text(date, format: .dateTime.hour().minute())
-                            .font(.system(size: 10))
-                            .foregroundStyle(Palette.ink.opacity(0.32))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.ink.opacity(0.45))
                     }
                 }
             }
@@ -231,7 +241,7 @@ struct ChartTooltip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(date, format: .dateTime.hour().minute().second())
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(Palette.ink.opacity(0.45))
             ForEach(entries.indices, id: \.self) { index in
                 let entry = entries[index]

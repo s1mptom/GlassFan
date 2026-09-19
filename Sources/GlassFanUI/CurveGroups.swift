@@ -25,7 +25,7 @@ struct CurveGroups: View {
                     Button(action: addCurve) {
                         HStack(spacing: 4) {
                             Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
-                            Text(L10n.t("кривая", "curve")).font(.system(size: 10.5))
+                            Text(L10n.t("кривая", "curve")).font(.system(size: 11))
                         }
                         .frame(height: 18)
                         .contentShape(Rectangle())
@@ -47,8 +47,8 @@ struct CurveGroups: View {
             }
 
             Text(footnote)
-                .font(.system(size: 10))
-                .foregroundStyle(nothingChosen ? Palette.heat.opacity(0.9) : Palette.ink.opacity(0.3))
+                .font(.system(size: 11))
+                .foregroundStyle(nothingChosen ? Palette.heat.opacity(0.9) : Palette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .card(padding: 14)
@@ -90,8 +90,8 @@ struct CurveGroups: View {
             }
             if curves[index].sensorKeys.isEmpty {
                 Text(L10n.t("Нет датчиков — кривая не работает", "No sensors, so this curve does nothing"))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.ink.opacity(0.4))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 chips(index)
@@ -119,7 +119,7 @@ struct CurveGroups: View {
                 Text(L10n.t("крутит", "driving")).foregroundStyle(Palette.heat)
             }
         }
-        .font(.system(size: 10))
+        .font(.system(size: 11))
         .lineLimit(1)
     }
 

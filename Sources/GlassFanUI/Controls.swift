@@ -157,12 +157,12 @@ struct SensorChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(name)
-                .font(.system(size: 10.5))
-                .foregroundStyle(highlighted ? Palette.heat : Palette.ink.opacity(0.72))
+                .font(.system(size: 11))
+                .foregroundStyle(highlighted ? Palette.heat : Palette.ink.opacity(0.78))
             Text(Format.temperature(value))
-                .font(.system(size: 10.5))
+                .font(.system(size: 11))
                 .monospacedDigit()
-                .foregroundStyle(Palette.ink.opacity(0.45))
+                .foregroundStyle(Palette.ink.opacity(0.5))
             if let onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "xmark")

@@ -81,8 +81,8 @@ struct FansView: View {
             ForEach(targets) { target in
                 HStack(spacing: 6) {
                     Text(SensorCatalog.smcZoneName(target.zone))
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.ink.opacity(0.45))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.ink.opacity(0.55))
                     Spacer(minLength: 0)
                     Text(Format.temperature(target.target))
                         .font(.system(size: 11.5, weight: .medium))
@@ -92,7 +92,7 @@ struct FansView: View {
             }
             Text(L10n.t("Температура, к которой ведёт штатное управление",
                         "What the automatic control steers towards"))
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(Palette.ink.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -514,9 +514,9 @@ struct SensorPicker: View {
                     .lineLimit(1)
 
                 Text(sensor.key)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .monospacedDigit()
-                    .foregroundStyle(Palette.ink.opacity(0.28))
+                    .foregroundStyle(Palette.ink.opacity(0.4))
 
                 Spacer(minLength: 8)
 
