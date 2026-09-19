@@ -242,8 +242,8 @@ half4 glassLight(float2 position, half4 color, float4 head, float4 tail, float r
     float glare = (pow(max(facing, 0.0), 1.6) + 0.55 * pow(max(-facing, 0.0), 2.0)) * band;
     // A fine line at the very edge, not a band: thinner and dimmer than it was, which
     // read as a glow round the drop rather than light on its rim.
-    float edgeLight = pow(1.0 - clamp(depth / 1.6, 0.0, 1.0), 2.0) * (dark ? 0.4 : 0.38);
-    half highlight = half(clamp((glare * (dark ? 0.55 : 0.8) + edgeLight) * lift, 0.0, 0.7));
+    float edgeLight = pow(1.0 - clamp(depth / 1.6, 0.0, 1.0), 2.0) * (dark ? 0.26 : 0.25);
+    half highlight = half(clamp((glare * (dark ? 0.42 : 0.6) + edgeLight) * lift, 0.0, 0.55));
     half shade = half(max(-facing, 0.0) * band * (dark ? 0.10 : 0.22) * lift);
 
     half inside = half(smoothstep(1.2, -1.2, shape.dist));
