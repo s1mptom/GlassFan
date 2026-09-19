@@ -10,7 +10,7 @@ struct FixedReadout: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .font(.system(size: 13, weight: .semibold))
             .monospacedDigit()
             .foregroundStyle(color)
             .frame(width: width, alignment: .trailing)
@@ -42,8 +42,8 @@ struct LabelledSlider: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text(title)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.ink.opacity(0.6))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.ink.opacity(0.85))
                 Spacer(minLength: 12)
                 FixedReadout(text: valueText, color: Palette.ink.opacity(0.9))
             }
@@ -53,8 +53,8 @@ struct LabelledSlider: View {
             .tint(tint)
             if let footnote {
                 Text(footnote)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.ink.opacity(0.35))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -69,7 +69,7 @@ struct SectionCaption: View {
         Text(text.uppercased())
             .font(.system(size: 11, weight: .medium))
             .tracking(0.7)
-            .foregroundStyle(Palette.ink.opacity(0.45))
+            .foregroundStyle(Palette.ink.opacity(0.5))
     }
 }
 

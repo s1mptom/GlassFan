@@ -15,25 +15,46 @@ struct SettingsView: View {
         )
     }
 
+    /// Four cards filling the window two by two. Should they ever outgrow it - a
+    /// long message from the installer, a smaller window - the same grid scrolls.
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 30, alignment: .topLeading),
-                                GridItem(.flexible(), alignment: .topLeading)],
-                      alignment: .leading, spacing: 30) {
-                if let config = configBinding() {
-                    safety(config).riseIn(0.02)
-                } else {
-                    daemonMissing.riseIn(0.02)
-                }
-                glass.riseIn(0.08)
-                daemon.riseIn(0.14)
-                panic.riseIn(0.20)
+        ViewThatFits(in: .vertical) {
+            grid(filling: true)
+            ScrollView {
+                grid(filling: false)
             }
-            .padding(.horizontal, 30)
-            .padding(.top, 22)
-            .padding(.bottom, 26)
+            .scrollContentBackground(.hidden)
         }
-        .scrollContentBackground(.hidden)
+        .padding(.horizontal, Metrics.page)
+        .padding(.top, Metrics.gap)
+        .padding(.bottom, Metrics.page)
+    }
+
+    private func grid(filling: Bool) -> some View {
+        VStack(spacing: Metrics.gap) {
+            row(filling: filling) {
+                Group {
+                    if let config = configBinding() {
+                        safety(config)
+                    } else {
+                        daemonMissing
+                    }
+                }
+                .settingsCard().riseIn(0.02)
+                glass.settingsCard().riseIn(0.08)
+            }
+            row(filling: filling) {
+                daemon.settingsCard().riseIn(0.14)
+                panic.settingsCard().riseIn(0.20)
+            }
+        }
+    }
+
+    /// Two cards side by side, as tall as each other: sharing the window's height
+    /// when filling it, as tall as the taller one's content when scrolling.
+    private func row(filling: Bool, @ViewBuilder _ cards: () -> some View) -> some View {
+        HStack(alignment: .top, spacing: Metrics.gap) { cards() }
+            .fixedSize(horizontal: false, vertical: !filling)
     }
 
     private func safety(_ config: Binding<AppConfig>) -> some View {
@@ -66,7 +87,7 @@ struct SettingsView: View {
             Text(L10n.t("Настройки появятся, когда демон будет установлен.",
                         "These appear once the daemon is installed."))
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.ink.opacity(0.4))
+                .foregroundStyle(Palette.ink.opacity(0.5))
         }
     }
 
@@ -76,25 +97,27 @@ struct SettingsView: View {
 
     private var glass: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                SectionCaption(text: L10n.t("Стекло", "Glass"))
-                Spacer()
-                // Only offered once the dials have actually been moved: a reset that is
-                // always there invites a press that does nothing.
-                if !isDefaultGlass {
-                    Button(L10n.t("Сбросить", "Reset")) {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            frost = GlassStyle.defaultFrost
-                            tint = GlassStyle.defaultTint
+            // The reset rides over the caption's row rather than in it, so its taller
+            // type does not push this card's content below the one beside it.
+            SectionCaption(text: L10n.t("Стекло", "Glass"))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .trailing) {
+                    // Only offered once the dials have actually been moved: a reset that
+                    // is always there invites a press that does nothing.
+                    if !isDefaultGlass {
+                        Button(L10n.t("Сбросить", "Reset")) {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                frost = GlassStyle.defaultFrost
+                                tint = GlassStyle.defaultTint
+                            }
                         }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.calm)
+                        .transition(.opacity)
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.calm)
-                    .transition(.opacity)
                 }
-            }
-            .animation(.easeOut(duration: 0.2), value: isDefaultGlass)
+                .animation(.easeOut(duration: 0.2), value: isDefaultGlass)
             LabelledSlider(
                 title: L10n.t("Матовость", "Frost"),
                 valueText: "\(Int(frost * 100)) %",
@@ -140,8 +163,8 @@ struct SettingsView: View {
                 }
                 Text(L10n.t("Логика управления живёт в демоне, так что без обновления новые возможности не действуют.",
                             "The control logic lives in the daemon, so until it is updated the new behaviour does not apply."))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.ink.opacity(0.45))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                 Button(L10n.t("Обновить", "Update")) { installer.install() }
                     .buttonStyle(.glassProminent)
@@ -152,18 +175,30 @@ struct SettingsView: View {
                         .font(.system(size: 12)).foregroundStyle(Palette.ink.opacity(0.6))
                 }
             case .failed(let message):
-                Text(message).font(.system(size: 11.5)).foregroundStyle(Palette.critical)
+                Text(message).font(.system(size: 12)).foregroundStyle(Palette.critical)
                 Button(L10n.t("Повторить", "Try again")) { installer.install() }
                     .buttonStyle(.glassProminent)
             case .notInstalled:
                 Text(L10n.t("Не установлено. Без этого приложение только показывает температуры.",
                             "Not installed. Without it the app only shows temperatures."))
                     .font(.system(size: 12))
-                    .foregroundStyle(Palette.ink.opacity(0.45))
+                    .foregroundStyle(Palette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                 Button(L10n.t("Установить", "Install")) { installer.install() }
                     .buttonStyle(.glassProminent)
             }
+            Spacer(minLength: 0)
+            HStack(spacing: 16) {
+                Text(L10n.t("Демон \(client.snapshot?.daemonVersion ?? "—")",
+                            "Daemon \(client.snapshot?.daemonVersion ?? "—")"))
+                Text(L10n.t("\(client.snapshot?.sensors.count ?? 0) датчиков",
+                            "\(client.snapshot?.sensors.count ?? 0) sensors"))
+                Text(L10n.t("\(client.snapshot?.fans.count ?? 0) вентилятора",
+                            "\(client.snapshot?.fans.count ?? 0) fans"))
+            }
+            .font(.system(size: 12))
+            .monospacedDigit()
+            .foregroundStyle(Palette.ink.opacity(0.5))
         }
     }
 
@@ -172,8 +207,8 @@ struct SettingsView: View {
             SectionCaption(text: L10n.t("Если что-то пошло не так", "If something looks wrong"))
             Text(L10n.t("Переводит все вентиляторы в авто и сбрасывает режимы — управление возвращается системе.",
                         "Puts every fan back on auto and clears the modes; the system takes over."))
-                .font(.system(size: 11.5))
-                .foregroundStyle(Palette.ink.opacity(0.4))
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.ink.opacity(0.62))
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 client.releaseAll()
@@ -183,18 +218,14 @@ struct SettingsView: View {
             }
             .buttonStyle(.glassProminent)
             .tint(Palette.critical)
-
-            HStack(spacing: 22) {
-                Text(L10n.t("Демон \(client.snapshot?.daemonVersion ?? "—")",
-                            "Daemon \(client.snapshot?.daemonVersion ?? "—")"))
-                Text(L10n.t("\(client.snapshot?.sensors.count ?? 0) датчиков",
-                            "\(client.snapshot?.sensors.count ?? 0) sensors"))
-                Text(L10n.t("\(client.snapshot?.fans.count ?? 0) вентилятора",
-                            "\(client.snapshot?.fans.count ?? 0) fans"))
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(Palette.ink.opacity(0.28))
-            .padding(.top, 6)
         }
+    }
+}
+
+private extension View {
+    /// A settings section: content from the top-left, as tall as its row.
+    func settingsCard() -> some View {
+        self.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .card()
     }
 }
