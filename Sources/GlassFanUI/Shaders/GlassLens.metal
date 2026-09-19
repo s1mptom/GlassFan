@@ -232,7 +232,12 @@ half4 glassLight(float2 position, half4 color, float4 head, float4 tail, float r
     float facing = dot(shape.outward, light);
     // Drawn out, the drop is thin, and a band sized to its thickness would glaze it
     // over from rim to rim; the light keeps to its edges instead.
-    float reach = bevel * (any(head != tail) ? 0.35 : 0.5);
+    // Drawn out, the drop is thin, and a band sized to its thickness would glaze it
+    // over; the light keeps nearer the edge the further the ends are apart. By how far,
+    // not by whether: switched on "apart at all", a tail a hundredth of a point behind
+    // its head dimmed the glare, which came back a second later when they met.
+    float apart = distance(head.xy + head.zw * 0.5, tail.xy + tail.zw * 0.5);
+    float reach = bevel * mix(0.5, 0.35, smoothstep(0.0, 6.0, apart));
     float band = pow(1.0 - clamp(depth / reach, 0.0, 1.0), 1.8);
     float glare = (pow(max(facing, 0.0), 1.6) + 0.55 * pow(max(-facing, 0.0), 2.0)) * band;
     // A fine line at the very edge, not a band: thinner and dimmer than it was, which

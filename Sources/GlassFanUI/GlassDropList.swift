@@ -303,6 +303,10 @@ final class DropListState {
             let away = abs(headY.value - goalY)
             let wanted = min(max((away - 6) / 18, 0), 1)
             travel += (wanted - travel) * min(step.dt * 18, 1)
+            // Home is home: an easing that only approaches left the tail a hair off its
+            // head for a second after every move, and the drop's light read that as
+            // drawn out.
+            if wanted == 0, travel < 0.01 { travel = 0 }
         }
 
         if DropScript.isEnabled {

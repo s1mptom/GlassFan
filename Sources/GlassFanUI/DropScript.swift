@@ -50,6 +50,12 @@ enum DropScript {
 
     private static func post(_ type: NSEvent.EventType, _ point: CGPoint) {
         guard let window, let content = window.contentView else { return }
+        // A click in a window that is not key only brings it forward; one elsewhere on
+        // the screen mid-run would have the rest of the run click at nothing.
+        if type == .leftMouseDown, !window.isKeyWindow {
+            NSApp.activate()
+            window.makeKeyAndOrderFront(nil)
+        }
         let location = NSPoint(x: point.x, y: content.bounds.height - point.y)
         guard let event = NSEvent.mouseEvent(
             with: type, location: location, modifierFlags: [],
@@ -68,6 +74,7 @@ enum DropScript {
         let frame = window.frame
         let screen = window.screen?.frame.height ?? 0
         log("WINDOW \(Int(frame.minX)) \(Int(screen - frame.maxY)) \(Int(frame.width)) \(Int(frame.height))")
+        log(String(format: "EPOCH %.3f", start.timeIntervalSince1970))
         log("ROWS " + rows.sorted { $0.key < $1.key }
             .map { "\($0.key):\(Int($0.value.minY))-\(Int($0.value.maxY))" }.joined(separator: " "))
 
@@ -105,6 +112,9 @@ enum DropScript {
         let down = second.y - first.y
         drag(from: first, legs: [(down * 0.2, 0.5), (0, 0.7), (down * 0.35, 0.8), (0, 0.7),
                                  (down * 0.45, 0.8), (0, 0.8)], "down")
+        at(1.2, {})
+        // Over to the next row in one move, then held there, still, for three seconds.
+        drag(from: second, legs: [(-down, 0.6), (0, 3.0)], "over and hold")
         at(1.6, {})
         // A nudge: a little way at a middling pace, and stop - where lumps once showed.
         drag(from: second, legs: [(12, 0.25), (0, 0.8), (-22, 0.35), (0, 0.8), (10, 0.2), (0, 0.6)], "nudge")
