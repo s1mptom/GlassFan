@@ -33,7 +33,33 @@ enum DropScript {
         FileHandle.standardError.write(Data((stamp + line + "\n").utf8))
     }
 
+    /// `GLASSFAN_CLICKS="x,y x,y ..."` (demo mode): clicks at those points in the
+    /// window, a second and a half apart, starting two seconds in - to check that
+    /// something can be clicked where it is drawn. `GLASSFAN_PRESS="x,y"` holds a
+    /// press there instead, for a look at what a press draws.
+    static func clicks() {
+        guard DemoFixture.isEnabled else { return }
+        let env = ProcessInfo.processInfo.environment
+        func points(_ key: String) -> [CGPoint] {
+            (env[key] ?? "").split(separator: " ").compactMap { pair in
+                let xy = pair.split(separator: ",").compactMap { Double($0) }
+                return xy.count == 2 ? CGPoint(x: xy[0], y: xy[1]) : nil
+            }
+        }
+        for (i, point) in points("GLASSFAN_CLICKS").enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(i) * 1.5) {
+                post(.leftMouseDown, point)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { post(.leftMouseUp, point) }
+                log("clicked \(point)")
+            }
+        }
+        if let point = points("GLASSFAN_PRESS").first {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { post(.leftMouseDown, point); log("pressing \(point)") }
+        }
+    }
+
     static func begin() {
+        clicks()
         guard isEnabled else { return }
         UserDefaults.standard.set("fans", forKey: Screen.storageKey)
         UserDefaults.standard.set(0, forKey: FansView.selectedKey)

@@ -80,6 +80,7 @@ public struct GlassFanApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified(showsTitle: false))
         // The window in the design is 1008x640; the 1120x720 artboard around it is
         // the desktop it was drawn floating on.
         .defaultSize(width: 1008, height: 640)
@@ -211,7 +212,6 @@ struct MainWindow: View {
 
     private var content: some View {
         VStack(spacing: 0) {
-            header
             Group {
                 switch screen {
                 case .overview: OverviewView()
@@ -228,6 +228,37 @@ struct MainWindow: View {
             .id(screen)
             .transition(.opacity.animation(.easeInOut(duration: 0.16)))
         }
+        // The tabs and the connection status sit in the window's own toolbar row,
+        // level with the traffic lights, rather than in a row of their own under an
+        // empty title bar.
+        .toolbar {
+            ToolbarItem(placement: .principal) { tabs }
+                .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) { status }
+                .sharedBackgroundVisibility(.hidden)
+        }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+    }
+
+    private var tabs: some View {
+        GlassSegmented(
+            items: Screen.allCases.map { .init(value: $0, title: $0.title) },
+            selection: $screen,
+            segmentWidth: nil
+        )
+    }
+
+    private var status: some View {
+        HStack(spacing: 7) {
+            LiveDot(active: client.isConnected)
+            Text(client.isConnected ? L10n.t("на связи", "connected")
+                                    : L10n.t("нет связи", "offline"))
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink.opacity(0.55))
+        }
+        // The toolbar sets its last item sixteen points from the edge; the page's
+        // margin is twenty.
+        .padding(.trailing, 4)
     }
 
     /// The window's own title bar is hidden, so this row carries the tabs and leaves
