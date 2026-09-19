@@ -187,4 +187,32 @@ struct ControllerTests {
         // band, it would have asked for 3500.
         #expect(c.update(temperatures: ["a": 65, "b": 49], emergencyTemp: 95) == 1900)
     }
+
+    /// Seen on an M1 Max: palm rests at 29 against a curve that stops below 32, and
+    /// one fan still turning at its floor. Smoothing had eased the target to about
+    /// 1e-23 rpm and no further - and any target above zero runs the fan.
+    @Test("with smoothing, a curve that says stop does stop the fan, and soon")
+    func smoothedStop() {
+        let settings = FanSettings(id: 0, mode: .curve, fixedRPM: 0, curves: [
+            CurveRule(sensorKeys: ["Ts0P"], curve: FanCurve(points: [
+                CurvePoint(temperature: 32, rpm: 0), CurvePoint(temperature: 36, rpm: 5348)])),
+        ], hysteresis: 2, smoothing: 0.3)
+        var c = FanController(settings: settings, limits: limits)
+        _ = c.update(temperatures: ["Ts0P": 34], emergencyTemp: 95)
+        var targets: [Double] = []
+        for _ in 0..<4 { targets.append(c.update(temperatures: ["Ts0P": 29], emergencyTemp: 95) ?? -1) }
+        #expect(targets.last == 0)
+        #expect(targets.contains(0))
+    }
+
+    @Test("with smoothing, a speed is reached exactly rather than approached for ever")
+    func smoothedArrives() {
+        var s = makeSettings()
+        s.smoothing = 0.3
+        var c = FanController(settings: s, limits: limits)
+        _ = c.update(temperatures: ["TCMz": 80], emergencyTemp: 95)
+        var last = 0.0
+        for _ in 0..<40 { last = c.update(temperatures: ["TCMz": 60], emergencyTemp: 95) ?? -1 }
+        #expect(last == 3250)
+    }
 }

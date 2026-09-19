@@ -125,6 +125,14 @@ public struct FanController {
 
     private func applySmoothing(to demand: Double) -> Double {
         guard settings.smoothing > 0, let previous = lastTarget else { return demand }
-        return previous + (demand - previous) * (1 - settings.smoothing)
+        let eased = previous + (demand - previous) * (1 - settings.smoothing)
+        // Easing only ever approaches. For a speed that does not matter; for a stop it
+        // does: a target of 1e-23 rpm is not zero, the SMC runs a fan at its floor for
+        // any target above zero, and a fan whose curve said stop kept turning.
+        if abs(eased - demand) < 1 { return demand }
+        // And under the fan's minimum a smaller target does not slow it - it sits at its
+        // floor - so on the way down to a stop, once below the minimum, stop.
+        if demand == 0, eased < limits.minRPM { return 0 }
+        return eased
     }
 }
