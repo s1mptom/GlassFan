@@ -155,6 +155,10 @@ struct TimeChart: View {
                 }
             }
         }
+        // Room inside the mask for the top value label: when the scale's top lands
+        // on a tick, half of that label stands above the chart's frame, and the
+        // mask below cut it through.
+        .padding(.top, 8)
         // Only while the line is drawing itself in. Left in place afterwards this
         // is a full-size mask over the whole plot - an offscreen pass the chart
         // pays for on every redraw, for a wipe that finished seconds ago.
