@@ -48,9 +48,19 @@ struct GlassSegmented<Value: Hashable>: View {
         LensRefracted(lens: lens, band: band) {
             labels
                 .padding(3)
-                .overlay(
+                // The ground goes through the lens with the labels, so the drop bends
+                // the track's own edges where its rim crosses them.
+                .background(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Palette.ink.opacity(0.10), lineWidth: 0.5)
+                        .fill(DropScript.debugTrack ? Color(red: 0.1, green: 0.5, blue: 0.9).opacity(0.6)
+                                                    : Palette.ink.opacity(0.06))
+                )
+                .overlay(
+                    // A bright top edge, as the system's own track has, which the drop's
+                    // bevel draws out into its coloured line.
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(LinearGradient(colors: [Palette.ink.opacity(0.22), Palette.ink.opacity(0.06)],
+                                                     startPoint: .top, endPoint: .bottom), lineWidth: 1)
                 )
         }
         .background(alignment: .topLeading) {
@@ -59,10 +69,6 @@ struct GlassSegmented<Value: Hashable>: View {
         .overlay(alignment: .topLeading) {
             LensOverlay(lens: lens, band: band, rowSize: rowSize)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Palette.ink.opacity(0.06))
-        )
         .coordinateSpace(.named(space))
         .contentShape(Rectangle())
         .gesture(press)
@@ -284,7 +290,8 @@ final class LensState {
     func geometry(at date: Date, band: CGRect) -> LensGeometry {
         advance(to: date.timeIntervalSinceReferenceDate)
         return LensGeometry(centreX: x.value, width: width.value, lift: max(lift.value, 0),
-                            stretch: stretch.value, motion: min(max(x.velocity / 1200, -1), 1), band: band)
+                            stretch: stretch.value, grow: CGSize(width: LensTuning.shared.growX, height: LensTuning.shared.growY),
+                            motion: min(max(x.velocity / 1200, -1), 1), band: band)
     }
 
     /// Brings the springs up to `time`, once a frame - see `FrameClock`.
@@ -350,14 +357,9 @@ private struct LensBackground: View {
                 let geometry = lens.geometry(at: context.date, band: band)
                 let base = geometry.base
                 let rect = geometry.rect
-                ZStack(alignment: .topLeading) {
-                    platter(base).opacity(1 - geometry.lift)
-                    Color.clear
-                        .glassEffect(.clear, in: Capsule())
-                        .frame(width: rect.width, height: rect.height)
-                        .offset(x: rect.minX, y: rect.minY)
-                        .opacity(min(geometry.lift, 1))
-                }
+                // The platter fades as the drop lifts out of it: under Apple's lifted
+                // drop there is only the ground and the rim.
+                platter(base).opacity(1 - min(geometry.lift, 1))
             }
         } else if let resting {
             platter(resting)
@@ -396,6 +398,8 @@ struct LensGeometry: Equatable {
     var width: CGFloat
     var lift: CGFloat
     var stretch: CGFloat
+    /// How far past the platter the drop stands when up: 4pt past the track.
+    var grow = CGSize(width: 12, height: 10)
     /// Horizontal speed, -1...1: the light on the glass swings with it and its
     /// colours part further.
     var motion: CGFloat = 0
@@ -409,7 +413,9 @@ struct LensGeometry: Equatable {
 
     /// The lens itself: grown past the track as it lifts, drawn out as it moves.
     var rect: CGRect {
-        let grown = base.insetBy(dx: -4 * lift, dy: -5 * lift)
+        // Past the track by 4pt, as Apple's drop stands past its track; the base is
+        // the platter, 3pt inside the track.
+        let grown = base.insetBy(dx: -grow.width * lift, dy: -grow.height * lift)
         let w = grown.width * (1 + stretch), h = grown.height * (1 - stretch * 0.5)
         return CGRect(x: grown.midX - w / 2, y: grown.midY - h / 2, width: w, height: h)
     }
@@ -455,3 +461,4 @@ extension GlassSegmented {
     }
     .frame(width: 520)
 }
+

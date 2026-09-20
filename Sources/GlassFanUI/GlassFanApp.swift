@@ -4,6 +4,7 @@ import FanKit
 public struct GlassFanApp: App {
     @State private var client = DaemonClient()
     @State private var installer = DaemonInstaller()
+    @Environment(\.openWindow) private var openWindow
 
     public init() {
         Self.carryOverMacFansDefaults()
@@ -55,6 +56,7 @@ public struct GlassFanApp: App {
                 .task {
                     client.start()
                     installer.refresh()
+                    if ProcessInfo.processInfo.environment["GLASSFAN_LAB"] == "1" { openWindow(id: "lab") }
                     Self.sayGoodbyeOnQuit(client)
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     // Measurement hook: what the app costs with its window closed
@@ -87,6 +89,12 @@ public struct GlassFanApp: App {
         // Below this the fan sidebar and the detail pane start colliding and the
         // headline row runs out of room, so the window simply refuses to go there.
         .windowResizability(.contentMinSize)
+
+        // The glass bench, for turning the rim's numbers with a drop on screen.
+        Window("Glass lab", id: "lab") {
+            GlassLabView()
+        }
+        .defaultSize(width: 1180, height: 700)
 
         MenuBarExtra {
             MenuBarPanel()

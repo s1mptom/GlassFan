@@ -230,6 +230,9 @@ final class DropListState {
         engaged = true
     }
 
+    /// How far the drop stands past its row on every side once it is up.
+    static let grow: CGFloat = 6
+
     /// `now` is the process's uptime, for the frame clock; tests pass their own.
     func geometry(at date: Date, rows: [CGRect],
                   now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> DropGeometry {
@@ -243,8 +246,10 @@ final class DropListState {
         }
         // The row's own size, not grown past it as the segmented drop grows past its
         // track: grown, it read as a drop over a frame rather than the frame lifting.
+        // Grown as it lifts: a drop of glass stands past the platter it rose from.
+        let grow = Self.grow * min(up, 1)
         func box(_ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
-            CGRect(x: x - w / 2, y: y - h / 2, width: w, height: h)
+            CGRect(x: x - w / 2 - grow, y: y - h / 2 - grow, width: w + grow * 2, height: h + grow * 2)
         }
         let head = box(headY.value, size(headW, goalSize.width), size(headH, goalSize.height))
         let tail = box(headY.value + (tailY.value - headY.value) * t,
@@ -374,17 +379,13 @@ private struct DropGlass: View {
                 // The ends only. The shader melts the bridge between them into a curve
                 // no path here follows, and system glass cut to a straight bridge
                 // showed as a dark bar across the neck.
-                let outline = DropOutline(geometry: geometry, bridged: false)
-                ZStack(alignment: .topLeading) {
-                    Color.clear
-                        .frame(width: size.width, height: size.height)
-                        .glassEffect(.regular, in: outline)
-                        .opacity(1 - lift)
-                    Color.clear
-                        .frame(width: size.width, height: size.height)
-                        .glassEffect(.clear, in: outline)
-                        .opacity(lift)
-                }
+                // The row's platter fades as the drop lifts out of it; what is under a
+                // lifted drop is the ground and the rim.
+                let platter = DropOutline(geometry: geometry.insetBy(DropListState.grow * lift), bridged: false)
+                Color.clear
+                    .frame(width: size.width, height: size.height)
+                    .glassEffect(.regular, in: platter)
+                    .opacity(1 - lift)
             }
         } else if let resting {
             platter(resting)

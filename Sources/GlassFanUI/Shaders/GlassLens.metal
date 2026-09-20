@@ -2,11 +2,12 @@
 #include <SwiftUI/SwiftUI_Metal.h>
 using namespace metal;
 
-// A drop of thick glass over the content of a layer, built as the published
-// breakdowns of Apple's Liquid Glass describe it: a shape with a bevelled rim,
-// refraction through that rim by Snell's law, dispersion in proportion to how
-// hard the rim bends, a frosting of what it bends, Fresnel reflection at grazing
-// angles, and glare where a fixed light catches the curve.
+// A drop of glass over the content of a layer, shaped like an ashtray and measured
+// off Apple's own: a low flat floor that magnifies a little and holds still, and a
+// bead round the rim whose two walls each show something different - what lies beyond
+// the edge, squeezed, and what lies further in, drawn outward - with the colours
+// parting and the light scattering as they cross it. The bead has no light of its own;
+// it is seen only through what it does. LensTuning holds every number.
 
 struct DropHit {
     float dist;       // signed distance to the rim: negative inside
@@ -107,8 +108,14 @@ static half4 frosted(SwiftUI::Layer layer, float2 p, float2 along, float2 across
 [[ stitchable ]]
 half4 glassLens(float2 position, SwiftUI::Layer layer,
                 float4 head, float4 tail, float radius, float neck,
-                float magnification, float lift, float motion, float darkInk)
+                float magnification, float lift, float motion, float darkInk,
+                float4 kA, float4 kB, float4 kC, float4 kD)
 {
+    // The rim's numbers, from LensTuning: see there for what each is.
+    float beadOut = kA.x, rimWidth = kA.y, rimSharp = kA.z, beadIn = kA.w;
+    float beadMix = kB.x, beadBlur = kB.y;
+    float dispersion = kC.x, straightDisp = kC.z, frostBase = kC.w;
+    float frostGain = kD.x, gatherGain = kD.y;
     half4 original = layer.sample(position);
     float4 bounds = float4(min(head.xy, tail.xy), 0.0, 0.0);
     bounds.zw = max(head.xy + head.zw, tail.xy + tail.zw) - bounds.xy;
@@ -125,90 +132,96 @@ half4 glassLens(float2 position, SwiftUI::Layer layer,
     float depth = max(-shape.dist, 0.0);
     bool dark = darkInk > 0.5;
 
-    // Body: a shallow dome, most magnified at the centre and a little less out
-    // towards the ends, so what is under it bows as it would under a real drop.
+    // An ashtray, not a dome: a low flat floor, and a bead of glass round the rim.
+    //
+    // The floor is flat, so what is under it only comes a little closer - the labels
+    // grow by a tenth and do not slide about as the drop moves. The bead is round, so
+    // light crosses it twice: one image of what lies beyond the edge, one of what lies
+    // further in, laid over each other. That is why a single bright line under Apple's
+    // drop - the ground's own edge - shows up twice near the rim, and why the bead
+    // itself is invisible: it has no light of its own, only what it bends, splits and
+    // scatters. Two whole images blended, never one folded: folding is what tore text
+    // and lines at the ends of the drop.
     float2 offset = position - centre;
-    float2 normalised = offset / halfSize;
-    float dome = clamp(dot(normalised, normalised), 0.0, 1.0);
-    float mag = mix(magnification, 1.0 + (magnification - 1.0) * 0.5, dome);
-    float2 through = centre + offset / mag;
+    float2 floorAt = centre + offset / magnification;
 
-    // Rim: refraction through the bevel. A ray meeting the curved surface bends by
-    // Snell's law (glass, n = 1.5); the steeper the surface, the further it lands
-    // from where it entered. Sampling from further in makes what is inside the
-    // drop wrap out across its rim.
-    float bevel = min(half_ * 0.95, 18.0);
-    float bendAmount = 0.0;
-    if (depth < bevel) {
-        float steepness = 1.0 - depth / bevel;
-        float incident = asin(clamp(steepness, 0.0, 0.9995));
-        float transmitted = asin(sin(incident) / 1.5);
-        bendAmount = tan(incident - transmitted);        // 0 where flat, ~1.1 at the rim
+    // The bead has two walls, and each shows something different. Nearest the edge the
+    // outer wall, sloping up and away, shows what lies beyond the drop, squeezed - so
+    // the ground under the drop reads a little narrower. Behind it the inner wall,
+    // sloping down into the floor, shows what lies further in, drawn outward - which is
+    // what makes a line crossing the drop hook outwards at the ends rather than in.
+    // Where the two meet is the line that cuts the dark ground inside Apple's drop.
+    float outerEnd = rimWidth * 0.4;
+    float wallOut = smoothstep(outerEnd, 0.0, depth) * lift;
+    float wallIn = smoothstep(outerEnd * 0.5, outerEnd * 1.4, depth)
+                 * smoothstep(rimWidth, outerEnd * 1.4, depth) * lift;
+    float bead = max(wallOut, wallIn);
+
+    // How much the colours part, and how much the bead scatters what it bends: both
+    // grow towards the edge, and the colours part most where the rim curves.
+    float2 ext = halfSize - float2(radius);
+    float2 away = abs(offset) - ext;
+    float cx = ext.x > 0.5 ? smoothstep(0.0, radius * 0.6, away.x) : 1.0;
+    float cy = ext.y > 0.5 ? smoothstep(0.0, radius * 0.6, away.y) : 1.0;
+    float curved = min(cx, cy);
+    float spread = dispersion * bead * mix(straightDisp, 1.0, curved) * (1.0 + 0.4 * abs(motion));
+    float frost = (frostBase + frostGain * bead) * lift;
+    float scatter = beadBlur * bead;
+
+    // The two faces of the bead, each with its colours parted along the way.
+    half3 sumRGB = half3(0.0), sumW = half3(0.0), perChannel = half3(0.0);
+    half4 mid = half4(0.0);
+    for (int i = 0; i < 7; i++) {
+        float t = float(i) / 6.0;
+        float f = 1.0 - spread * (1.0 - 2.0 * t);
+        half3 w = half3(exp(-pow((t - 0.05) / 0.3, 2.0)), exp(-pow((t - 0.5) / 0.28, 2.0)), exp(-pow((t - 0.95) / 0.3, 2.0)));
+        half4 flat_ = frosted(layer, floorAt, normal, tangent, frost);
+        half4 outer = frosted(layer, floorAt + normal * beadOut * wallOut * f, normal, tangent, frost + scatter);
+        half4 inner = frosted(layer, floorAt - normal * beadIn * wallIn * f, normal, tangent, frost + scatter);
+        half4 through = mix(mix(flat_, inner, half(wallIn * beadMix)), outer, half(wallOut));
+        sumRGB += through.rgb * w;
+        perChannel += through.a * w;
+        sumW += w;
+        if (i == 3) { mid = through; }
     }
-    float reach = bevel * 0.95 * lift;
-    float2 bend = -normal * bendAmount * reach;
+    half3 colour = sumRGB / sumW;
+    perChannel /= sumW;
+    float pull = bead;
 
-    // Dispersion: each colour bends by its own amount, so the colours part where
-    // the rim bends hardest, and part further while the drop moves.
-    float spread = 0.09 + 0.12 * abs(motion);
-    // Frosted across the whole bevel, most at the edge, as the rim of real glass is.
-    float frost = (bendAmount * 2.4 + 1.2 * clamp(1.0 - depth / bevel, 0.0, 1.0)) * lift;
-    half4 red   = frosted(layer, through + bend * (1.0 - spread), normal, tangent, frost);
-    half4 green = frosted(layer, through + bend,                  normal, tangent, frost);
-    half4 blue  = frosted(layer, through + bend * (1.0 + spread), normal, tangent, frost);
-
-    half coverage = max(green.a, max(red.a, blue.a));
+    half coverage = max(perChannel.r, max(perChannel.g, perChannel.b));
     half4 seen;
     if (dark) {
         // Dark marks on a light ground have no colour to split; what parts at a
         // real edge is the light behind them, so each fringe takes the colour
         // that got past the mark.
-        half3 ink = green.a > 0.0 ? green.rgb / green.a : half3(0.0);
-        half3 perChannel = half3(red.a, green.a, blue.a);
+        half3 ink = mid.a > 0.0 ? mid.rgb / mid.a : half3(0.0);
         seen = half4(half3(coverage) - perChannel * (half3(1.0) - ink), coverage);
     } else {
-        seen = half4(red.r, green.g, blue.b, coverage);
+        seen = half4(colour, coverage);
     }
-    // What is under the glass reads at full strength, as under a system glass thumb.
+    // The bevel gathers light: whatever it bends is brighter the nearer the edge.
+    if (pull > 0.0 && seen.a > 0.0) {
+        half gather = half(1.0 + gatherGain * pull * lift);
+        half boosted = min(seen.a * gather, 1.0h);
+        seen.rgb = min(seen.rgb * (boosted / seen.a), half3(boosted));
+        seen.a = boosted;
+    }
+    // Marks under the glass read at full strength, as under a system glass thumb;
+    // a faint ground under it stays as faint as it was.
     if (seen.a > 0.0) {
-        half lifted = min(seen.a * half(1.0 + 0.8 * lift), 1.0h);
+        half lifted = min(seen.a * half(1.0 + 0.8 * lift * smoothstep(0.15, 0.5, float(seen.a))), 1.0h);
         seen.rgb = min(seen.rgb * (lifted / seen.a), half3(lifted));
         seen.a = lifted;
     }
 
-    // Fresnel: towards the rim, where the surface is seen at a grazing angle, the
-    // glass turns into a mirror and shows what lies beside it outside - flipped,
-    // as a reflection is.
-    float grazing = pow(1.0 - clamp(depth / (bevel * 0.75), 0.0, 1.0), 2.2);
-    half4 reflected = frosted(layer, position + normal * (2.0 * depth + 2.0), normal, tangent, 0.8);
-    seen = over(seen, reflected * half(grazing * 0.5 * lift));
-
-    // The fold: where the bevel turns, light that came in through the flat of the
-    // glass is caught by the curve and sent back out along it. What is inside the
-    // drop shows again in the band between the fold and the edge, mirrored across
-    // the fold - strongest at the edge, gone at the fold - with its colours split a
-    // little, as everything bent this hard is.
-    float fold = bevel * 0.55;
-    if (depth < fold) {
-        float2 across = -normal * (2.0 * (fold - depth));
-        float band = pow(1.0 - depth / fold, 1.3) * smoothstep(0.0, 1.2, depth);
-        half4 caughtR = frosted(layer, position + across * 1.06, normal, tangent, 0.7);
-        half4 caughtG = frosted(layer, position + across,        normal, tangent, 0.7);
-        half4 caughtB = frosted(layer, position + across * 0.94, normal, tangent, 0.7);
-        half4 caught = half4(caughtR.r, caughtG.g, caughtB.b, max(caughtG.a, max(caughtR.a, caughtB.a)));
-        seen = over(seen, caught * half(0.5 * band * lift));
-    }
-
-    // A soft edge rather than a cut one.
-    half inside = half(smoothstep(1.2, -1.2, shape.dist));
+    // A crisp edge: glass is not soft at its rim.
+    half inside = half(smoothstep(0.6, -0.6, shape.dist));
     return mix(original, seen, inside);
 }
 
-/// The light on the drop: glare where a fixed light from above left catches the
-/// curve facing it and, more faintly, the opposite curve where it leaves the glass;
-/// a bright edge where the glass is seen at a grazing angle; and the curve turned
-/// away from the light a shade darker, which is what gives the rim its thickness.
-/// The light swings a little as the drop moves.
+/// The light on the drop is next to none, and none of it glows: the edge itself,
+/// dark, where the glass is seen side-on, and the faintest line where the bevel
+/// folds into the flat. The colour at the rim is the bevel's own, from what it bends.
 ///
 /// A colour effect of its own, over the refracted labels rather than part of
 /// them: SwiftUI composites a layer effect's translucent output twice over a band
@@ -216,7 +229,7 @@ half4 glassLens(float2 position, SwiftUI::Layer layer,
 /// translucent, came out as a bright stripe across the drop.
 [[ stitchable ]]
 half4 glassLight(float2 position, half4 color, float4 head, float4 tail, float radius, float neck,
-                 float lift, float motion, float darkInk)
+                 float lift, float motion, float darkInk, float4 kE)
 {
     float half_ = thickness(head, tail) * 0.5;
     if (lift <= 0.002 || half_ <= 0.5) { return half4(0.0); }
@@ -225,35 +238,26 @@ half4 glassLight(float2 position, half4 color, float4 head, float4 tail, float r
 
     bool dark = darkInk > 0.5;
     float depth = max(-shape.dist, 0.0);
-    float bevel = min(half_ * 0.95, 18.0);
+    float scale = clamp(half_ / 19.0, 0.55, 1.0);
+    float edge = 1.0 - smoothstep(0.55 * kE.x * scale, kE.x * scale, depth);
+    // Iridescence: the rim's own reflection, split by wavelength - a fine line along
+    // the straight sides, a wider band round the curved ends, its hue turning with
+    // the direction of the surface. kE.w sets how much.
+    float2 offset = position - (min(head.xy, tail.xy) + (max(head.xy + head.zw, tail.xy + tail.zw) - min(head.xy, tail.xy)) * 0.5);
+    float2 halfSize = (max(head.xy + head.zw, tail.xy + tail.zw) - min(head.xy, tail.xy)) * 0.5;
+    float2 ext = halfSize - float2(radius);
+    float2 away = abs(offset) - ext;
+    float cx = ext.x > 0.5 ? smoothstep(0.0, radius * 0.6, away.x) : 1.0;
+    float cy = ext.y > 0.5 ? smoothstep(0.0, radius * 0.6, away.y) : 1.0;
+    float curved = min(cx, cy);
+    float iridWidth = mix(1.6, 4.5, curved) * scale;
+    float irid = pow(1.0 - smoothstep(0.0, iridWidth, depth), 1.5) * smoothstep(0.0, 0.7, depth);
+    float hue = atan2(shape.outward.y, shape.outward.x) / (2.0 * M_PI_F) * 3.0 + depth / iridWidth;
+    half3 iridColour = half3(0.5 + 0.5 * cos(2.0 * M_PI_F * (hue + float3(0.0, 0.33, 0.67))));
+    half highlight = half(irid * kE.w * mix(0.35, 1.0, curved) * lift);
+    half3 tint = mix(half3(1.0), iridColour, 0.85h);
+    half shade = half(edge * (dark ? kE.y : min(kE.y + 0.1, 1.0)) * lift);
 
-    float angle = (-135.0 + 28.0 * clamp(motion, -1.0, 1.0)) * M_PI_F / 180.0;
-    float2 light = float2(cos(angle), sin(angle));
-    float facing = dot(shape.outward, light);
-    // Drawn out, the drop is thin, and a band sized to its thickness would glaze it
-    // over from rim to rim; the light keeps to its edges instead.
-    // Drawn out, the drop is thin, and a band sized to its thickness would glaze it
-    // over; the light keeps nearer the edge the further the ends are apart. By how far,
-    // not by whether: switched on "apart at all", a tail a hundredth of a point behind
-    // its head dimmed the glare, which came back a second later when they met.
-    float apart = distance(head.xy + head.zw * 0.5, tail.xy + tail.zw * 0.5);
-    float reach = bevel * mix(0.5, 0.35, smoothstep(0.0, 6.0, apart));
-    float band = pow(1.0 - clamp(depth / reach, 0.0, 1.0), 1.8);
-    float glare = (pow(max(facing, 0.0), 1.6) + 0.55 * pow(max(-facing, 0.0), 2.0)) * band;
-    // A fine line at the very edge, not a band: thinner and dimmer than it was, which
-    // read as a glow round the drop rather than light on its rim.
-    float edgeLight = pow(1.0 - clamp(depth / 1.6, 0.0, 1.0), 2.0) * (dark ? 0.26 : 0.25);
-    half highlight = half(clamp((glare * (dark ? 0.42 : 0.6) + edgeLight) * lift, 0.0, 0.55));
-    half shade = half(max(-facing, 0.0) * band * (dark ? 0.10 : 0.22) * lift);
-
-    half inside = half(smoothstep(1.2, -1.2, shape.dist));
-    half4 lit = over(half4(half3(highlight), highlight), half4(0.0, 0.0, 0.0, shade)) * inside;
-
-    // On a light ground a clear drop needs its outline to be seen at all: a faint
-    // darkening just across the rim, not a line.
-    if (dark) {
-        half outline = half(pow(1.0 - clamp(abs(shape.dist + 0.3) / 1.8, 0.0, 1.0), 2.0) * 0.2 * lift);
-        lit = over(lit, half4(0.0, 0.0, 0.0, outline));
-    }
-    return lit;
+    half inside = half(smoothstep(0.6, -0.6, shape.dist));
+    return over(half4(tint * highlight, highlight), half4(0.0, 0.0, 0.0, shade)) * inside;
 }

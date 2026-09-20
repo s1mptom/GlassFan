@@ -99,7 +99,7 @@ struct DropGeometry: Equatable {
     var lift: CGFloat
     /// Speed along the way it moves, -1...1: the light swings and the colours part with it.
     var motion: CGFloat = 0
-    var maxMagnification: CGFloat = 1.3
+    var maxMagnification: CGFloat = 1.1
 
     static func capsule(_ rect: CGRect, lift: CGFloat, motion: CGFloat) -> DropGeometry {
         DropGeometry(head: rect, tail: rect, cornerRadius: rect.height / 2, lift: lift, motion: motion)
@@ -108,6 +108,15 @@ struct DropGeometry: Equatable {
     var bounds: CGRect { head.union(tail) }
     var magnification: CGFloat { 1 + (maxMagnification - 1) * min(lift, 1) }
     var isVisible: Bool { lift > 0.002 }
+
+    /// The same drop with both ends drawn in by `inset` on every side.
+    func insetBy(_ inset: CGFloat) -> DropGeometry {
+        var smaller = self
+        smaller.head = head.insetBy(dx: inset, dy: inset)
+        smaller.tail = tail.insetBy(dx: inset, dy: inset)
+        smaller.cornerRadius = max(cornerRadius - inset, 2)
+        return smaller
+    }
 
     func offsetBy(dx: CGFloat, dy: CGFloat) -> DropGeometry {
         var moved = self
@@ -190,7 +199,7 @@ struct GlassDropRefraction: ViewModifier {
                                .float(geometry.motion),
                                // The ink follows the scheme: dark labels in light mode.
                                .float(colorScheme == .light ? 1 : 0),
-                           ]),
+                           ] + LensTuning.shared.lensArguments),
                     // How far the drop reaches for what it shows: the magnified body,
                     // the bend of the rim, and the reflection beside it.
                     maxSampleOffset: reach ?? CGSize(width: bounds.width * 0.3 + thick + 8,
@@ -204,99 +213,40 @@ struct GlassDropRefraction: ViewModifier {
     }
 }
 
-/// The light on the drop and what it casts: the glare, edge and shading worked out
-/// from its shape by a shader, its shadow on what is below, and the bloom under the
-/// pointer.
+/// The edge of the drop: the one thing its glass does not draw itself.
 ///
-/// Painted in one `Canvas` rather than built from views: as a shadow, masks and a
-/// dozen strokes, the lens was rebuilt as a view tree on every frame, and that, not
-/// the drawing, was what moving it cost.
+/// A colour effect of its own, over the refracted content rather than part of it -
+/// SwiftUI composites a layer effect's translucent output twice over a band of the
+/// layer wherever it may sample far afield, and a translucent edge came out as a
+/// stripe across the drop.
 struct GlassDropLight: View {
     @Environment(\.colorScheme) private var colorScheme
     let geometry: DropGeometry
-    let pointer: CGPoint
+    /// Where the pointer is, in the same coordinates as `geometry`. Kept for callers
+    /// that still hand it over; the glass no longer blooms under it.
+    var pointer: CGPoint = .zero
     /// The area the drop moves over, in the same coordinates as `geometry`.
     let size: CGSize
 
-    /// Room around the area for what reaches past it: the lifted drop, its shadow.
+    /// Room around the area for what reaches past it.
     private let margin: CGFloat = 16
 
     var body: some View {
-        if geometry.isVisible {
+        if geometry.isVisible, let library = LensShaders.library, !DropScript.off.contains("shader") {
             let drop = geometry.offsetBy(dx: margin, dy: margin)
-            ZStack(alignment: .topLeading) {
-                if !DropScript.off.contains("canvas") {
-                    Canvas { context, _ in
-                        context.translateBy(x: margin, y: margin)
-                        paint(in: &context)
-                    }
-                }
-                if let library = LensShaders.library, !DropScript.off.contains("shader") {
-                    Rectangle()
-                        .fill(.white)
-                        .colorEffect(Shader(function: ShaderFunction(library: library, name: "glassLight"),
-                                            arguments: drop.shaderShape + [
-                                                .float(min(drop.lift, 1)),
-                                                .float(drop.motion),
-                                                .float(colorScheme == .light ? 1 : 0),
-                                            ]))
-                }
-            }
-            .frame(width: size.width + margin * 2, height: size.height + margin * 2)
-            .offset(x: -margin, y: -margin)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+            Rectangle()
+                .fill(.white)
+                .colorEffect(Shader(function: ShaderFunction(library: library, name: "glassLight"),
+                                    arguments: drop.shaderShape + [
+                                        .float(min(drop.lift, 1)),
+                                        .float(drop.motion),
+                                        .float(colorScheme == .light ? 1 : 0),
+                                    ] + LensTuning.shared.lightArguments))
+                .frame(width: size.width + margin * 2, height: size.height + margin * 2)
+                .offset(x: -margin, y: -margin)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
-    }
-
-    private func paint(in context: inout GraphicsContext) {
-        let outline = geometry.outline
-        // Faster than the glass shrinks, so a landing drop never shows two edges.
-        let edges = geometry.lift * geometry.lift
-        paintShadow(in: &context, outline: outline, opacity: edges)
-        context.drawLayer { layer in
-            layer.opacity = edges
-            layer.clip(to: outline)
-            paintBloom(in: &layer)
-        }
-    }
-
-    /// Cast on what is below, and kept off the inside of the drop: seen through clear
-    /// glass, a shadow underneath reads as a smudge.
-    private func paintShadow(in context: inout GraphicsContext, outline: Path, opacity: CGFloat) {
-        context.drawLayer { layer in
-            layer.opacity = opacity
-            var outside = Path(CGRect(x: -margin, y: -margin,
-                                      width: size.width + margin * 2, height: size.height + margin * 2))
-            outside.addPath(outline)
-            layer.clip(to: outside, style: FillStyle(eoFill: true))
-
-            let box = geometry.bounds.insetBy(dx: -7, dy: -6).offsetBy(dx: 0, dy: 3)
-            let radius = box.height / 2
-            layer.translateBy(x: box.midX, y: box.midY)
-            layer.scaleBy(x: box.width / box.height, y: 1)
-            layer.fill(Path(ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)),
-                       with: .radialGradient(Gradient(stops: [.init(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.12),
-                                                                    location: 0.6),
-                                                              .init(color: .black.opacity(0), location: 1)]),
-                                             center: .zero, startRadius: 0, endRadius: radius))
-        }
-    }
-
-    /// A soft bloom under the pointer - the response system glass gives to a touch.
-    /// The rest of the drop's light is the shader's, worked out from its shape.
-    private func paintBloom(in context: inout GraphicsContext) {
-        let dark = colorScheme == .dark
-        context.blendMode = dark ? .plusLighter : .normal
-        let bounds = geometry.bounds
-        let short = min(bounds.width, bounds.height)
-        let radius = short * 0.8
-        let inner = bounds.insetBy(dx: min(short * 0.3, bounds.width / 2), dy: min(short * 0.3, bounds.height / 2))
-        let at = CGPoint(x: min(max(pointer.x, inner.minX), inner.maxX),
-                         y: min(max(pointer.y, inner.minY), inner.maxY))
-        context.fill(Path(ellipseIn: CGRect(x: at.x - radius, y: at.y - radius, width: radius * 2, height: radius * 2)),
-                     with: .radialGradient(Gradient(colors: [.white.opacity(dark ? 0.08 : 0.16), .white.opacity(0)]),
-                                           center: at, startRadius: 0, endRadius: radius))
     }
 }
 

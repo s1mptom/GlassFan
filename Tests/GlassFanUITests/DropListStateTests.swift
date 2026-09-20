@@ -61,8 +61,9 @@ struct DropListStateTests {
             let t = start + Double(frame) / 60
             drop.held = 30 + min(Double(frame), 20) * 1.2
             let g = drop.geometry(at: Date(timeIntervalSinceReferenceDate: t), rows: rows, now: t)
+            let grown = DropListState.grow * 2 * min(g.lift, 1)
             worst = max(worst, abs(g.head.width - g.tail.width), abs(g.head.midY - g.tail.midY),
-                        abs(g.head.width - rows[0].width), abs(g.head.height - rows[0].height))
+                        abs(g.head.width - rows[0].width - grown), abs(g.head.height - rows[0].height - grown))
         }
         #expect(worst < 0.5)
     }
