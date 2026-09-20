@@ -319,6 +319,10 @@ struct CurveEditor: View {
                 let marker = CGPoint(x: min(max(raw.x, plot.minX), plot.maxX),
                                      y: min(max(raw.y, plot.minY), plot.maxY))
                 let nearFloor = marker.y > plot.maxY - 22
+                let readoutAt = CGPoint(x: min(marker.x + 52, plot.maxX - 46),
+                                        y: nearFloor ? marker.y - 20
+                                                     : min(max(marker.y, plot.minY + 12), plot.maxY - 12))
+                let reading = String(format: "%.0f° · %.0f", currentTemp, currentRPM)
                 Circle()
                     .fill(Palette.heat)
                     .frame(width: 11, height: 11)
@@ -328,9 +332,12 @@ struct CurveEditor: View {
                     .overlay(Circle().strokeBorder(Palette.heat.opacity(0.25), lineWidth: 4))
                     .overlay(Circle().strokeBorder(Palette.heat.opacity(0.12), lineWidth: 9))
                     .position(marker)
-                    .animation(.easeInOut(duration: 0.8), value: currentTemp)
+                    // Keyed on where it is, not on what it reads: picking another curve
+                    // moves the marker to that curve's reading, which can stand at the
+                    // same temperature, and then the dot jumped instead of gliding.
+                    .animation(.easeInOut(duration: 0.8), value: marker)
 
-                Text(String(format: "%.0f° · %.0f", currentTemp, currentRPM))
+                Text(reading)
                     .font(.system(size: 11))
                     .monospacedDigit()
                     .foregroundStyle(Palette.ink)
@@ -347,10 +354,15 @@ struct CurveEditor: View {
                             .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.12),
                                                             lineWidth: 0.5))
                     )
-                    .position(x: min(marker.x + 52, plot.maxX - 46),
-                              y: nearFloor ? marker.y - 20
-                                           : min(max(marker.y, plot.minY + 12), plot.maxY - 12))
-                    .animation(.easeInOut(duration: 0.8), value: currentTemp)
+                    .fixedSize()
+                    // Label and capsule travel as one body. Without this the label is
+                    // laid out afresh for the new reading while the capsule behind it
+                    // glides, and SwiftUI, unable to carry changed glyphs along, drew
+                    // them at the far end straight away: an empty capsule crossed the
+                    // chart towards numbers already standing where it was going.
+                    .geometryGroup()
+                    .position(readoutAt)
+                    .animation(.easeInOut(duration: 0.8), value: readoutAt)
                     // Out of the way of the point being set, which is what matters then.
                     .opacity(inspected == nil ? 1 : 0.25)
                     .animation(.easeOut(duration: 0.15), value: inspected)
