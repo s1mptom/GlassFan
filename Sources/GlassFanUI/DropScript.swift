@@ -23,6 +23,10 @@ enum DropScript {
         ? Set((ProcessInfo.processInfo.environment["GLASSFAN_DROP_OFF"] ?? "").split(separator: ",").map(String.init))
         : []
 
+    /// `GLASSFAN_DEBUG_TRACK=1`: the segmented control's ground in loud colours, to see
+    /// what the drop does with an edge it crosses.
+    static let debugTrack = ProcessInfo.processInfo.environment["GLASSFAN_DEBUG_TRACK"] == "1"
+
     /// The drop list's rows, in the window's content coordinates (top-left origin).
     static var rows: [Int: CGRect] = [:]
 
@@ -56,6 +60,38 @@ enum DropScript {
         if let point = points("GLASSFAN_PRESS").first {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { post(.leftMouseDown, point); log("pressing \(point)") }
         }
+        drag(through: points("GLASSFAN_DRAG"))
+    }
+
+    /// `GLASSFAN_DRAG="x,y x,y ..."` (demo mode): presses at the first point two
+    /// seconds in, then drags through the rest at a hand's pace - 80 points a
+    /// second - stopping half a second at each, and lets go at the last. For a
+    /// look at a drop in motion anywhere in the window, the tabs included.
+    private static func drag(through path: [CGPoint]) {
+        guard let first = path.first else { return }
+        var t = 2.0
+        func at(_ delay: Double, _ action: @escaping () -> Void) {
+            t += delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: action)
+        }
+        at(0, { post(.leftMouseDown, first); log("drag: down at \(first)") })
+        at(0.5, {})
+        var from = first
+        for to in path.dropFirst() {
+            let seconds = max(hypot(to.x - from.x, to.y - from.y) / 80, 0.05)
+            let steps = max(Int(seconds * 60), 1)
+            for step in 1...steps {
+                let f = CGFloat(step) / CGFloat(steps)
+                let point = CGPoint(x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f)
+                at(seconds / Double(steps), { post(.leftMouseDragged, point) })
+            }
+            let reached = to
+            at(0, { log("drag: at \(reached)") })
+            at(0.5, {})
+            from = to
+        }
+        let end = from
+        at(0, { post(.leftMouseUp, end); log("drag: up at \(end)") })
     }
 
     static func begin() {
