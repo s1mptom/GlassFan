@@ -232,7 +232,7 @@ struct GlassDropLight: View {
     private let margin: CGFloat = 16
 
     var body: some View {
-        if geometry.isVisible, let library = LensShaders.library, !DropScript.off.contains("shader") {
+        if geometry.isVisible, let library = LensShaders.library {
             let drop = geometry.offsetBy(dx: margin, dy: margin)
             Rectangle()
                 .fill(.white)

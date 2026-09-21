@@ -71,7 +71,6 @@ final class DaemonClient {
             SensorCatalog.configure(snapshot.sensors, engines: snapshot.sensorEngines ?? [:])
             feed = Feed(snapshot: snapshot, history: DemoFixture.history())
             isConnected = true
-            DropScript.begin()
             return
         }
         connect()

@@ -52,8 +52,7 @@ struct GlassSegmented<Value: Hashable>: View {
                 // the track's own edges where its rim crosses them.
                 .background(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(DropScript.debugTrack ? Color(red: 0.1, green: 0.5, blue: 0.9).opacity(0.6)
-                                                    : Palette.ink.opacity(0.06))
+                        .fill(Palette.ink.opacity(0.06))
                 )
                 .overlay(
                     // A bright top edge, as the system's own track has, which the drop's

@@ -270,9 +270,7 @@ lines crossing the drop *outwards* at its ends, both of which Apple's drop does 
 single bevel does not. No glow, no shadow, no bloom under the pointer — refraction, a
 thread of colour where the bend is hardest, and a dark hairline at the very edge.
 
-Every number of that rim lives in one place, `LensTuning`, and `Scripts/glass-lab.sh`
-puts the drop on a test ground with a slider for each of them, so a change can be looked
-at — and lined up against Apple's own — without touching the app.
+Every number of that rim lives in one place, `LensTuning`, beside the shader itself.
 
 Its position, width, lift and stretch are four hand-stepped springs, so a click glides in
 one motion and a stalled frame pauses the drop instead of making it jump. At rest none of
@@ -412,13 +410,6 @@ sudo ./.build/debug/fanctld --selftest               # does a forced target move
 `--write-test` only writes keys on its own list, and refuses to raise a thermal
 setpoint: lowering one asks for more cooling, raising one asks the Mac to run hotter
 than Apple decided it should.
-
-The interface has one of its own, which runs the built app on the fixture readings and
-needs no hardware at all:
-
-```sh
-./Scripts/glass-lab.sh -z 280,190,300,70 lens.png   # the drop over a test ground, any rim setting
-```
 
 Open `Package.swift` in Xcode and pick the **GlassFanUI** scheme to see every screen in
 previews, fed from the same fixture.
