@@ -37,6 +37,11 @@ actual work.
   completely when told to, and run steadily well below the SMC's advertised minimum.
   How far below is learned from the fan rather than assumed — see *The speed a fan
   will not go below*.
+- **Up to three curves per fan** — each over its own sensors, and the fan runs at the
+  fastest speed any of them asks for. All three are drawn together: the one being edited
+  in front, the one actually driving the fan picked out in its own colour, the rest
+  dashed, each numbered at its end and each showing where its own sensors stand at the
+  moment. Which one is driving is said in as many words, on the fan and on the overview.
 - **Driven by the sensors you pick** — a curve follows the hottest of any set of
   sensors, with hysteresis and smoothing so the fans do not hunt.
 - **Every sensor, named** — all ~220 temperature keys, grouped (CPU cores, GPU
@@ -49,8 +54,10 @@ actual work.
   palette has that stay apart for everyone; ticking a seventh is refused where you tick
   it rather than accepted and then not drawn.
 - **Menu bar** — both fans, the mode switch and the headline temperatures one click away.
-- **Liquid Glass throughout** — adjustable frost and tone for the window, and a
-  segmented control whose selection you can pick up like a drop of glass (below).
+- **Liquid Glass throughout** — the screens are one grid of cards, the tabs sit in the
+  window's own toolbar row, frost and tone are yours to set, and the selection is a drop
+  of glass you can pick up — in the segmented controls and in the curve list, off one
+  shader and one set of springs (below).
 - **Safe by construction** — the app holds no privileges; if it *crashes* the fans stay
   managed, and if the daemon stops they go back to the system. Quitting GlassFan on
   purpose hands the fans back to the system and leaves your settings alone — they apply
@@ -60,20 +67,20 @@ actual work.
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/fans.png" alt="Fans screen with a curve editor"></td>
+    <td><img src="docs/screenshots/fans.png" alt="Fans screen: three curves and the sensors behind each"></td>
     <td><img src="docs/screenshots/sensors.png" alt="Sensors screen"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Fans — modes, curve, the sensors that drive it</sub></td>
+    <td align="center"><sub>Fans — modes, three curves, the sensors behind each</sub></td>
     <td align="center"><sub>Sensors — named, grouped, sortable</sub></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/settings.png" alt="Settings screen"></td>
-    <td><img src="docs/screenshots/curve.png" alt="Dragging a curve point shows its temperature and speed"></td>
+    <td><img src="docs/screenshots/curve.png" alt="Setting a curve point, with the fan's other curves behind it"></td>
   </tr>
   <tr>
     <td align="center"><sub>Settings — safety, glass, the daemon</sub></td>
-    <td align="center"><sub>Setting a curve point</sub></td>
+    <td align="center"><sub>Setting a point, the other curves behind it</sub></td>
   </tr>
 </table>
 
@@ -176,7 +183,8 @@ or run `xattr -dr com.apple.quarantine /Applications/GlassFan.app` in Terminal.
 The app only shows temperatures until its helper is installed: open
 **Settings → Fan control → Install**. macOS asks for your password once, and the
 daemon starts with the system from then on. When a newer release carries a newer
-daemon, the same place offers **Update**.
+daemon, the same place offers **Update**, and says it is updating for the few seconds the
+old one is being replaced rather than reporting the helper missing.
 
 If another fan utility such as Macs Fan Control is running its privileged helper,
 quit it first — both would write the same SMC keys.
@@ -240,20 +248,35 @@ and the "Open Anyway" step disappears for everyone. It needs these repository se
 ## The glass drop
 
 <p align="center">
-  <img src="docs/lens.png" width="760" alt="The segmented control's selection lifted into a glass lens">
+  <img src="docs/lens.png" width="760" alt="The tab strip's selection lifted into a drop of glass, caught between two tabs">
 </p>
 
-macOS 26 gives the liquid lens — the drop you can push around a segmented control
-on iOS — only to its own sliders and switches. GlassFan's segmented controls build
-one: press anywhere and the selection lifts into a drop that follows the pointer,
-stretches with speed and settles onto the segment you let go over.
+macOS 26 gives the liquid lens — the drop you can push around a segmented control on
+iOS — only to its own sliders and switches. GlassFan's segmented controls and its curve
+list build one: press anywhere and the selection lifts into a drop that follows the
+pointer, draws out with speed and settles onto whatever you let go over.
 
-It is modelled on the published breakdowns of Liquid Glass: a Metal shader refracts
-what is under the drop through a bevelled rim by Snell's law, splits colour where the
-rim bends hardest, frosts and mirrors at grazing angles, and lights the curve from a
-fixed light that swings as the drop moves. Its position, width, lift and stretch are
-four hand-stepped springs, so a click glides in one motion and a stalled frame pauses
-the drop instead of making it jump. At rest none of it exists.
+Its shape was measured rather than guessed. Take a lossless screenshot of Activity
+Monitor with the drop held over its control, take another without it, and the two say
+what the glass does to what is under it, pixel column by pixel column: the body is
+magnified evenly — 1.10× about the centre — and the whole of the distortion sits in a
+narrow rim. That is why the track stays visible straight through the drop and its labels
+only grow rather than slide.
+
+So the Metal shader is shaped like an ashtray rather than a lens: a flat floor that
+magnifies, and a bead around it whose two walls push the image out and then draw it
+back. That is what puts the edge of the surface underneath on screen twice, and hooks
+lines crossing the drop *outwards* at its ends, both of which Apple's drop does and a
+single bevel does not. No glow, no shadow, no bloom under the pointer — refraction, a
+thread of colour where the bend is hardest, and a dark hairline at the very edge.
+
+Every number of that rim lives in one place, `LensTuning`, and `Scripts/glass-lab.sh`
+puts the drop on a test ground with a slider for each of them, so a change can be looked
+at — and lined up against Apple's own — without touching the app.
+
+Its position, width, lift and stretch are four hand-stepped springs, so a click glides in
+one motion and a stalled frame pauses the drop instead of making it jump. At rest none of
+it exists.
 
 ## How it is put together
 
@@ -390,12 +413,20 @@ sudo ./.build/debug/fanctld --selftest               # does a forced target move
 setpoint: lowering one asks for more cooling, raising one asks the Mac to run hotter
 than Apple decided it should.
 
+The interface has one of its own, which runs the built app on the fixture readings and
+needs no hardware at all:
+
+```sh
+./Scripts/glass-lab.sh -z 280,190,300,70 lens.png   # the drop over a test ground, any rim setting
+```
+
 Open `Package.swift` in Xcode and pick the **GlassFanUI** scheme to see every screen in
-previews, fed from a fixture.
+previews, fed from the same fixture.
 
 ## Credits
 
-- Liquid Glass breakdowns this is modelled on: [Charles Grassi](https://charlesgrassi.dev/blog/apple-liquid-glass/),
+- Liquid Glass breakdowns this started from, before the drop was measured off
+  Apple's own: [Charles Grassi](https://charlesgrassi.dev/blog/apple-liquid-glass/),
   [kube.io](https://kube.io/blog/liquid-glass-css-svg/),
   [Ken Sorrell](https://www.sorrell.info/blog/liquid-glass-lens-effect),
   [Imad Rahmoune](https://imadrahmoune.com/liquid-glass/), and
@@ -437,6 +468,10 @@ silicon, сделанный под macOS 26 и Liquid Glass.
   (macOS спросит пароль один раз).
 - **Режимы:** Системный, Фиксированный, Кривая. Кривая может опускаться до 0 —
   вентилятор остановится.
+- **До трёх кривых на вентилятор**, у каждой свой набор датчиков; вентилятор крутится на
+  максимуме из того, что они просят, и приложение показывает, какая сейчас ведёт. Все
+  три нарисованы на одном графике: редактируемая впереди, ведущая своим цветом,
+  остальные пунктиром.
 - **На M3 и новее** забрать вентилятор у системы получается не мгновенно: сначала надо,
   чтобы отошёл штатный термоменеджер, это 5–13 секунд. Всё это время приложение честно
   показывает, что управления ещё нет, а не делает вид, что командует.
