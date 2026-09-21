@@ -323,54 +323,12 @@ struct CurveEditor: View {
                                         y: nearFloor ? marker.y - 20
                                                      : min(max(marker.y, plot.minY + 12), plot.maxY - 12))
                 let reading = String(format: "%.0f° · %.0f", currentTemp, currentRPM)
-                Circle()
-                    .fill(Palette.heat)
-                    .frame(width: 11, height: 11)
-                    // The halo was a live shadow on a dot that moves every second,
-                    // which is an offscreen blur pass for something a ring draws
-                    // just as well.
-                    .overlay(Circle().strokeBorder(Palette.heat.opacity(0.25), lineWidth: 4))
-                    .overlay(Circle().strokeBorder(Palette.heat.opacity(0.12), lineWidth: 9))
-                    .position(marker)
-                    // Keyed on where it is, not on what it reads: picking another curve
-                    // moves the marker to that curve's reading, which can stand at the
-                    // same temperature, and then the dot jumped instead of gliding.
-                    .animation(.easeInOut(duration: 0.8), value: marker)
-
-                Text(reading)
-                    .font(.system(size: 11))
-                    .monospacedDigit()
-                    .foregroundStyle(Palette.ink)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    // A plain capsule, not a glass surface. This label moves with
-                    // every reading, and re-rendering a Liquid Glass material on
-                    // something that is in motion a second out of every second is
-                    // the most expensive thing on the screen for the least gain -
-                    // it is a tooltip the size of a postage stamp.
-                    .background(
-                        Capsule()
-                            .fill(Palette.surface.opacity(0.82))
-                            .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.12),
-                                                            lineWidth: 0.5))
-                    )
-                    .fixedSize()
-                    // Label and capsule travel as one body. Without this the label is
-                    // laid out afresh for the new reading while the capsule behind it
-                    // glides, and SwiftUI, unable to carry changed glyphs along, drew
-                    // them at the far end straight away: an empty capsule crossed the
-                    // chart towards numbers already standing where it was going.
-                    .geometryGroup()
-                    .position(readoutAt)
-                    .animation(.easeInOut(duration: 0.8), value: readoutAt)
-                    // Out of the way of the point being set, which is what matters then.
-                    .opacity(inspected == nil ? 1 : 0.25)
-                    .animation(.easeOut(duration: 0.15), value: inspected)
+                LiveMarker(dot: marker, label: readoutAt, reading: reading,
+                           dimmed: inspected != nil)
             }
         }
-        // Decoration, and it takes no clicks. Both the dot and its label are
-        // `.position`ed, and a positioned view fills the space its parent offers - so
-        // this layer covers the whole plot however small the thing drawn on it is.
+        // Decoration, and it takes no clicks: the layers fill the plot and the two small
+        // things on them are placed within it.
         .allowsHitTesting(false)
     }
 
