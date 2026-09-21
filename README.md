@@ -38,10 +38,10 @@ actual work.
   How far below is learned from the fan rather than assumed — see *The speed a fan
   will not go below*.
 - **Up to three curves per fan** — each over its own sensors, and the fan runs at the
-  fastest speed any of them asks for. All three are drawn together: the one being edited
-  in front, the one actually driving the fan picked out in its own colour, the rest
-  dashed, each numbered at its end and each showing where its own sensors stand at the
-  moment. Which one is driving is said in as many words, on the fan and on the overview.
+  fastest speed any of them asks for (*How a fan is driven*, below). All three are drawn
+  together: the one being edited in front, the one actually driving the fan picked out in
+  its own colour, the rest dashed, each numbered at its end and each showing where its own
+  sensors stand at the moment.
 - **Driven by the sensors you pick** — a curve follows the hottest of any set of
   sensors, with hysteresis and smoothing so the fans do not hunt.
 - **Every sensor, named** — all ~220 temperature keys, grouped (CPU cores, GPU
@@ -83,6 +83,34 @@ actual work.
     <td align="center"><sub>Setting a point, the other curves behind it</sub></td>
   </tr>
 </table>
+
+## How a fan is driven
+
+In Curve mode a fan can follow up to three curves at once, and each is a rule of its
+own: its own sensors, its own line. A curve reads the hottest of the sensors it was
+given, puts that temperature through its line, and the fan then runs at the **fastest**
+speed any of them asks for — so one curve can hold the fan up for the GPU while another
+is still idling over the palm rests. The one that won is what the app calls *driving*:
+the fan's row says which curve it is, the group is marked in the list beside it, and its
+line is the one picked out on the chart. A tie goes to the earlier curve, so the name
+does not flicker between two that agree.
+
+Under the chart are two dials, and they belong to the fan rather than to any one curve:
+
+- **Hysteresis** is a band in degrees. A rise is followed at once; a fall waits until the
+  temperature has dropped that far past the reading the curve is holding. Each curve
+  holds its own, so a group that is cooling cannot drag another group's demand down
+  with it.
+- **Smoothing** eases the target towards what the curve asks for instead of stepping to
+  it, so a spike does not become an audible jump. Except at a stop: easing only ever
+  approaches zero, and below the fan's floor a smaller target does not slow it down
+  anyway, so on the way down the target goes to zero rather than creeping towards it —
+  a fan told to stop stops.
+
+A curve none of whose sensors can be read is skipped rather than treated as cold, and if
+that is true of all of them the fan goes back to the system, because steering by nothing
+is worse than letting the Mac do it. Above the emergency threshold every curve is
+abandoned: the hottest reading in any of them takes the fan to full speed.
 
 ## Compatibility
 
@@ -459,10 +487,12 @@ silicon, сделанный под macOS 26 и Liquid Glass.
   (macOS спросит пароль один раз).
 - **Режимы:** Системный, Фиксированный, Кривая. Кривая может опускаться до 0 —
   вентилятор остановится.
-- **До трёх кривых на вентилятор**, у каждой свой набор датчиков; вентилятор крутится на
-  максимуме из того, что они просят, и приложение показывает, какая сейчас ведёт. Все
-  три нарисованы на одном графике: редактируемая впереди, ведущая своим цветом,
-  остальные пунктиром.
+- **До трёх кривых на вентилятор**, у каждой свой набор датчиков: кривая берёт самый
+  горячий из своих, прогоняет через свою линию, а вентилятор крутится на максимуме из
+  того, что они просят. Победившая и есть «ведущая» — она подписана у вентилятора,
+  отмечена в списке групп и выделена цветом на графике. Гистерезис у каждой кривой свой
+  (остывающая группа не утянет чужую вниз), сглаживание — общее на вентилятор, и на нуле
+  оно не «подползает»: сказано остановиться — останавливается.
 - **На M3 и новее** забрать вентилятор у системы получается не мгновенно: сначала надо,
   чтобы отошёл штатный термоменеджер, это 5–13 секунд. Всё это время приложение честно
   показывает, что управления ещё нет, а не делает вид, что командует.
