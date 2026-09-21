@@ -2,7 +2,7 @@
 // Generates AppIcon.icns. Kept as a script so the icon is reproducible rather than a
 // binary blob nobody can regenerate.
 //
-// Direction A from the icon canvas (design/glassfan-icon): six swept blades and
+// Direction A from the icon canvas: six swept blades and
 // the wake they drag, on a pane of glass that is the whole tile. Drawn in the
 // canvas's own 1024-unit, y-down space, so every number below is the number on
 // the canvas. The blade formula is a copy of GlassFanUI's FanGeometry - change

@@ -11,14 +11,14 @@ xcuserdata/
 # not part of it.
 .memsearch/
 
-# The design canvas as published: rebuilt from the working files beside it.
-design/glassfan-icon/glassfan-icon.html
 __pycache__/
 
 # Release packages, built by Scripts/package-release.sh.
 dist/
 
 # Claude Code's own files - notes, skills, settings, and the plans and specs it writes
-# while working. Kept on disk, not part of the project.
+# while working - and the design canvases the screens were drawn on. Kept on disk;
+# what came of them is the app itself.
 .claude/
 docs/superpowers/
+design/
