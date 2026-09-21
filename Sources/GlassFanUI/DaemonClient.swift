@@ -25,9 +25,39 @@ final class DaemonClient {
         var history: [HistorySample] = []
     }
     private var feed = Feed()
+    /// Built while nobody is looking, and handed over the moment somebody is.
+    ///
+    /// The screens are laid out again for every reading that reaches `feed`, and a
+    /// window that is closed, behind another one or on another Space goes on doing it:
+    /// measured at four points of a core for the overview, against one and a third for
+    /// a screen that draws nothing live. Tearing the screen down instead was worse -
+    /// it came back a piece at a time, in front of the user.
+    private var held: Feed?
+    /// The newest reading, whoever has seen it.
+    private var latest: Feed { held ?? feed }
+
+    /// Whether the full reading is worth publishing: the window can be seen, or the
+    /// menu bar's panel is open on it.
+    private var isWatched: Bool { WindowVisibility.shared.isVisible || panelIsOpen }
+
+    /// Set by the menu bar's panel while it is on screen.
+    var panelIsOpen = false {
+        didSet { if panelIsOpen { publishHeld() } }
+    }
 
     var snapshot: Snapshot? { feed.snapshot }
     var history: [HistorySample] { feed.history }
+
+    /// What the menu bar's own label shows. It is on screen whatever the window is
+    /// doing, so this is kept fresh even while the rest is held back - and it is three
+    /// small pieces of text, not a screen.
+    private(set) var headline = Headline()
+
+    struct Headline: Equatable {
+        var hottest: Double?
+        var fastestRPM: Double?
+        var hasFans = false
+    }
     private(set) var isConnected = false
     private(set) var lastError: String?
     /// When the daemon went quiet: contact lost, or the first attempt refused. Nil
@@ -73,6 +103,7 @@ final class DaemonClient {
             isConnected = true
             return
         }
+        WindowVisibility.shared.onBecameVisible = { [weak self] in self?.publishHeld() }
         connect()
         Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -177,13 +208,22 @@ final class DaemonClient {
                 temps[sensor.key] = sensor.value
             }
             // Built off to the side and written once: see `Feed`.
-            var history = feed.history
+            var history = latest.history
             history.append(HistorySample(t: snapshot.time, temps: temps,
                                          fanRPM: snapshot.fans.map(\.actualRPM)))
             if history.count > historyLimit {
                 history.removeFirst(history.count - historyLimit)
             }
-            feed = Feed(snapshot: snapshot, history: history)
+            let fresh = Feed(snapshot: snapshot, history: history)
+            if isWatched {
+                feed = fresh
+                held = nil
+            } else {
+                held = fresh
+            }
+            headline = Headline(hottest: snapshot.sensors.max { $0.value < $1.value }?.value,
+                                fastestRPM: snapshot.fans.map(\.actualRPM).max(),
+                                hasFans: !snapshot.fans.isEmpty)
             reconcileConfig(with: snapshot.config)
 
         case .failure(let text):
@@ -251,6 +291,15 @@ final class DaemonClient {
         draftConfig = nil
         pendingConfig = nil
         pendingSince = nil
+    }
+
+    /// Hands over the reading taken while nobody was looking. Called the moment the
+    /// window comes back or the panel opens, so what is shown is never a second old
+    /// for longer than it takes to draw.
+    func publishHeld() {
+        guard let held else { return }
+        feed = held
+        self.held = nil
     }
 
     // MARK: Convenience for views

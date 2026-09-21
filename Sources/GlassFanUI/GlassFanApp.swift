@@ -108,12 +108,15 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            // Off `headline` rather than the whole reading: this label is on screen
+            // whatever the window is doing, and the rest is held back while nobody is
+            // looking at it.
             Image(systemName: !client.isConnected ? "exclamationmark.triangle"
-                  : client.snapshot?.fans.isEmpty == true ? "thermometer.medium" : "fan")
-            if let hottest = client.hottest {
-                Text(Format.temperature(hottest.value))
+                  : client.headline.hasFans ? "fan" : "thermometer.medium")
+            if let hottest = client.headline.hottest {
+                Text(Format.temperature(hottest))
             }
-            if let fastest = client.snapshot?.fans.map(\.actualRPM).max(), fastest > 0 {
+            if let fastest = client.headline.fastestRPM, fastest > 0 {
                 Text(Format.rpm(fastest)).foregroundStyle(.secondary)
             }
         }

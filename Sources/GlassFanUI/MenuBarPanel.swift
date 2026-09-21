@@ -50,6 +50,10 @@ struct MenuBarPanel: View {
         }
         .padding(16)
         .frame(width: 336)
+        // While this is open it is the one thing looking at the full reading, which is
+        // otherwise held back whenever the window cannot be seen.
+        .onAppear { client.panelIsOpen = true }
+        .onDisappear { client.panelIsOpen = false }
     }
 
     private var header: some View {

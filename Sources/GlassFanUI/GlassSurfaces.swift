@@ -231,16 +231,28 @@ struct GlassBackground: View {
 final class WindowVisibility {
     static let shared = WindowVisibility()
     private(set) var isVisible = true
+    /// Called when the window comes back, so whatever was held while nobody was
+    /// looking can be handed over at once rather than at the next reading.
+    @ObservationIgnored var onBecameVisible: (() -> Void)?
 
     fileprivate func track(_ window: NSWindow) {
-        isVisible = window.occlusionState.contains(.visible)
+        // A window closed and opened again is a new one to SwiftUI, and its first
+        // notification is the one that never comes: it is already on screen by the time
+        // anyone is watching it.
+        let visible = window.occlusionState.contains(.visible)
+        let returned = visible && !isVisible
+        isVisible = visible
+        if returned { onBecameVisible?() }
         NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification,
             object: window, queue: .main
         ) { [weak self, weak window] _ in
             guard let window else { return }
             MainActor.assumeIsolated {
-                self?.isVisible = window.occlusionState.contains(.visible)
+                let visible = window.occlusionState.contains(.visible)
+                guard let self, visible != self.isVisible else { return }
+                self.isVisible = visible
+                if visible { self.onBecameVisible?() }
             }
         }
     }
