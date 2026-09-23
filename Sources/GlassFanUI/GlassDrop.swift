@@ -178,6 +178,14 @@ struct GlassDropRefraction: ViewModifier {
     /// reach that changes as the effect switches off came out as one frame of the
     /// content drawn out of place.
     var reach: CGSize? = nil
+    /// The tracks under the drop, in the content's coordinates, and their corner
+    /// radius - a segmented control's one, a list's rows: the band just inside each
+    /// edge is the track's, seen through the glass, and labels grow only well inside.
+    var tracks: [CGRect] = []
+    var trackRadius: CGFloat = 0
+    /// Where the labels under the drop have their middles, along x: each grows about
+    /// its own. None for content that grows about the drop's middle.
+    var anchors: [CGFloat] = []
 
     /// Room around the content for the parts of the drop that reach past it: it
     /// stands taller than the row it sits on, and draws out when it moves.
@@ -199,7 +207,13 @@ struct GlassDropRefraction: ViewModifier {
                                .float(geometry.motion),
                                // The ink follows the scheme: dark labels in light mode.
                                .float(colorScheme == .light ? 1 : 0),
-                           ] + LensTuning.shared.lensArguments),
+                           ] + LensTuning.shared.lensArguments(light: colorScheme == .light) + [
+                               .floatArray(tracks.isEmpty ? [0, 0, 0, 0] : tracks.flatMap {
+                                   [Float($0.minX + room), Float($0.minY + room), Float($0.width), Float($0.height)]
+                               }),
+                               .float(trackRadius),
+                               .floatArray((anchors.isEmpty ? [bounds.midX - room] : anchors).map { Float($0 + room) }),
+                           ]),
                     // How far the drop reaches for what it shows: the magnified body,
                     // the bend of the rim, and the reflection beside it.
                     maxSampleOffset: reach ?? CGSize(width: bounds.width * 0.3 + thick + 8,
@@ -213,7 +227,7 @@ struct GlassDropRefraction: ViewModifier {
     }
 }
 
-/// The edge of the drop: the one thing its glass does not draw itself.
+/// The drop's hairline and its shadow: the dark its glass cannot draw itself.
 ///
 /// A colour effect of its own, over the refracted content rather than part of it -
 /// SwiftUI composites a layer effect's translucent output twice over a band of the
@@ -228,8 +242,8 @@ struct GlassDropLight: View {
     /// The area the drop moves over, in the same coordinates as `geometry`.
     let size: CGSize
 
-    /// Room around the area for what reaches past it.
-    private let margin: CGFloat = 16
+    /// Room around the area for what reaches past it: the shadow, most of all.
+    private let margin: CGFloat = 24
 
     var body: some View {
         if geometry.isVisible, let library = LensShaders.library {
@@ -241,7 +255,7 @@ struct GlassDropLight: View {
                                         .float(min(drop.lift, 1)),
                                         .float(drop.motion),
                                         .float(colorScheme == .light ? 1 : 0),
-                                    ] + LensTuning.shared.lightArguments))
+                                    ] + LensTuning.shared.lightArguments(light: colorScheme == .light)))
                 .frame(width: size.width + margin * 2, height: size.height + margin * 2)
                 .offset(x: -margin, y: -margin)
                 .allowsHitTesting(false)

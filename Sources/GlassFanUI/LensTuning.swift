@@ -1,10 +1,17 @@
 import SwiftUI
 
-/// The numbers behind the drop's rim, in one place rather than spread through the
-/// shader's call sites.
+/// The numbers behind the drop, in one place rather than spread through the shader's
+/// call sites.
 ///
-/// The rim's profile was read pixel by pixel off Activity Monitor's drop: depths are
-/// points in from the edge, for a drop 19pt tall from centre to edge, scaled for others.
+/// Fitted to Apple's own drop - Activity Monitor's segmented control, fifteen frames
+/// held at the same places in the dark appearance and in the light - on the glass
+/// bench (a separate package, kept off the main branch). Depths are points in from the
+/// edge; Apple's drop is 46pt tall. The two sets agree on everything the glass does to
+/// where things are - the line, the pull, the parted colours, the growth - and differ
+/// in tone: on dark the glass dims and lifts what it covers and its hairline is near
+/// black; on light it leaves the ground be and its hairline is grey. The shadow and the
+/// darkening under the top edge are the same on both, a few per cent - which is why
+/// they were only seen once the light frames were in.
 final class LensTuning: Sendable {
     static let shared = LensTuning()
 
@@ -12,40 +19,69 @@ final class LensTuning: Sendable {
     let growX: Double = 12
     let growY: Double = 10
 
-    /// The bead round the rim - the ashtray's wall, in two zones over `rimWidth`
-    /// points. Nearest the edge the outer wall shows what lies `beadOut` points beyond
-    /// the drop, squeezed; behind it the inner wall shows what lies `beadIn` points
-    /// further in, drawn outward, at strength `beadMix`. `beadBlur` is how much the
-    /// bead scatters, `rimSharp` how fast it fades into the floor.
-    let beadOut: Double = 1.6
-    let beadIn: Double = 2.6
-    let beadMix: Double = 0.9
-    let beadBlur: Double = 0.8
-    let rimWidth: Double = 6.0
-    let rimSharp: Double = 1.4
-    /// How far the colours part at the rim, and how much of that survives along the
-    /// straight sides; the blur across the rim; how much brighter the rim makes what
-    /// it bends.
-    let dispersion: Double = 0.5
-    let straightDispersion: Double = 0.6
-    let frostBase: Double = 0.15
-    let frostGain: Double = 0.5
-    let gather: Double = 1.3
+    /// Every number, in the order the shader unpacks them.
+    struct Rim: Sendable {
+        /// The thin line of colour: a band `lineWidth` wide at `lineAt` in, showing what
+        /// lies `lineReach` further in; red and blue fetched `rbShift` further than green.
+        var lineAt, lineReach, lineWidth, rbShift: Double
+        /// The track's band, `bandFrom`-`bandTo` inside its edge, showing what lies
+        /// `bandReach` beyond it; the glass's lift over the rim.
+        var bandFrom, bandTo, bandReach, ledgeLift: Double
+        /// How much bigger labels come out (the control's, eased in with the lift);
+        /// the ends' own pull; where the rim ends and the body starts; the ends' extra
+        /// parting of colours.
+        var magnification, capPull, bodyAt, endSpread: Double
+        var edgeDark, lineGain, ledgeChroma, ledgeGain: Double
+        /// Round the ends: the line's pull facing along the drop, as a share; red and
+        /// blue's softening over the outer `blurDepth`; how much of the glass is left.
+        var endReach, rbBlur, blurDepth, endGlass: Double
+        var endBlur, lineSpread, endWidth, endChroma: Double
+        /// The shadow outside, darkest `shadowAt` out, `shadowWidth` wide, `shadowUp` of
+        /// it above the drop.
+        var shadowDark, shadowAt, shadowWidth, shadowUp: Double
+        /// The darkening inside, `innerAt` under the top edge; `innerBottom` of it under
+        /// the bottom one (negative: lighter).
+        var innerShade, innerAt, innerWidth, innerBottom: Double
 
-    /// The dark line at the edge: its width, and how dark.
-    let edgeWidth: Double = 0.9
-    let edgeDark: Double = 0.45
-    /// The rim's own coloured reflection: 0 for none.
-    let iridescence: Double = 0.0
-
-    var lensArguments: [Shader.Argument] {
-        [.float4(Float(beadOut), Float(rimWidth), Float(rimSharp), Float(beadIn)),
-         .float4(Float(beadMix), Float(beadBlur), 0, 0),
-         .float4(Float(dispersion), 0, Float(straightDispersion), Float(frostBase)),
-         .float4(Float(frostGain), Float(gather), 0, 0)]
+        var arguments: [Shader.Argument] {
+            let values = [lineAt, lineReach, lineWidth, rbShift, bandFrom, bandTo, bandReach, ledgeLift,
+                          magnification, capPull, bodyAt, endSpread, edgeDark, lineGain, ledgeChroma, ledgeGain,
+                          endReach, rbBlur, blurDepth, endGlass, endBlur, lineSpread, endWidth, endChroma,
+                          shadowDark, shadowAt, shadowWidth, shadowUp, innerShade, innerAt, innerWidth, innerBottom]
+            return stride(from: 0, to: values.count, by: 4).map { i in
+                .float4(Float(values[i]), Float(values[i + 1]), Float(values[i + 2]), Float(values[i + 3]))
+            }
+        }
     }
 
-    var lightArguments: [Shader.Argument] {
-        [.float4(Float(edgeWidth), Float(edgeDark), 0, Float(iridescence))]
+    /// The pull round the ends ran into the shader's limit of 1.98 in both fits.
+    let dark = Rim(
+                 lineAt: 1.372, lineReach: 3.888, lineWidth: 0.903, rbShift: 0.085,
+                 bandFrom: 0.856, bandTo: 3.14, bandReach: 4.357, ledgeLift: 0.099,
+                 magnification: 1.104, capPull: -1.98, bodyAt: 7.283, endSpread: 0.956,
+                 edgeDark: 0.715, lineGain: 1.133, ledgeChroma: 0.073, ledgeGain: 0.633,
+                 endReach: 0.065, rbBlur: 1.396, blurDepth: 8.375, endGlass: 0.321,
+                 endBlur: 0.643, lineSpread: 0.166, endWidth: 1.62, endChroma: 0.878,
+                 shadowDark: 0.049, shadowAt: 5.584, shadowWidth: 5.349, shadowUp: 0.141,
+                 innerShade: 0.031, innerAt: 9.444, innerWidth: 4.465, innerBottom: -0.061)
+    let light = Rim(
+                 lineAt: 1.385, lineReach: 4.979, lineWidth: 1.158, rbShift: 0.056,
+                 bandFrom: 0.595, bandTo: 3.926, bandReach: 2.964, ledgeLift: 0.006,
+                 magnification: 1.093, capPull: -1.98, bodyAt: 5.467, endSpread: 0.896,
+                 edgeDark: 0.301, lineGain: 0.964, ledgeChroma: 0.056, ledgeGain: 1.009,
+                 endReach: 0.336, rbBlur: 1.22, blurDepth: 9.312, endGlass: 0.337,
+                 endBlur: 0.03, lineSpread: 0.2, endWidth: 2.333, endChroma: 1.001,
+                 shadowDark: 0.042, shadowAt: 4.801, shadowWidth: 5.117, shadowUp: 0.034,
+                 innerShade: 0.043, innerAt: 10, innerWidth: 4.957, innerBottom: -0.063)
+
+    func lensArguments(light isLight: Bool) -> [Shader.Argument] {
+        (isLight ? light : dark).arguments
+    }
+
+    /// The dark drawn over the drop and round it: the hairline and the shadow.
+    func lightArguments(light isLight: Bool) -> [Shader.Argument] {
+        let rim = isLight ? light : dark
+        return [.float4(Float(rim.edgeDark), 0, 0, 0),
+                .float4(Float(rim.shadowDark), Float(rim.shadowAt), Float(rim.shadowWidth), Float(rim.shadowUp))]
     }
 }

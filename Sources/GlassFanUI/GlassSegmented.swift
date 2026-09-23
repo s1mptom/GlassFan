@@ -29,6 +29,7 @@ struct GlassSegmented<Value: Hashable>: View {
     var fills = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Segment frames in the row's own space, measured by the labels themselves.
     @State private var frames: [Int: CGRect] = [:]
@@ -45,22 +46,12 @@ struct GlassSegmented<Value: Hashable>: View {
     var body: some View {
         // The track's outline goes through the lens with the labels, so the drop
         // bends it where the two cross; its fill stays under the platter.
-        LensRefracted(lens: lens, band: band) {
+        LensRefracted(lens: lens, band: band, track: track, anchors: anchors, trackRadius: trackRadius) {
             labels
                 .padding(3)
                 // The ground goes through the lens with the labels, so the drop bends
                 // the track's own edges where its rim crosses them.
-                .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(Palette.ink.opacity(0.06))
-                )
-                .overlay(
-                    // A bright top edge, as the system's own track has, which the drop's
-                    // bevel draws out into its coloured line.
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(LinearGradient(colors: [Palette.ink.opacity(0.22), Palette.ink.opacity(0.06)],
-                                                     startPoint: .top, endPoint: .bottom), lineWidth: 1)
-                )
+                .background { AppleTrack(light: colorScheme == .light) }
         }
         .background(alignment: .topLeading) {
             LensBackground(lens: lens, band: band, resting: frames[selectedIndex], selectedIndex: selectedIndex)
@@ -101,6 +92,19 @@ struct GlassSegmented<Value: Hashable>: View {
         // The glide belongs to the value, not to the click that happened to cause
         // it, so Command-1..4 and the menu bar's mode switch slide as well.
         .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selection)
+    }
+
+    /// The track the labels sit in, in the row's own space: the labels and the 3pt
+    /// round them.
+    private var track: CGRect {
+        CGRect(x: 0, y: 0, width: rowSize.width + 3, height: rowSize.height + 3)
+    }
+
+    private var trackRadius: CGFloat { track.height / 2 }
+
+    /// The labels' middles, which each grow about under the drop.
+    private var anchors: [CGFloat] {
+        items.indices.compactMap { frames[$0]?.midX }
     }
 
     /// The segments' vertical extent, which the lens and platter share.
@@ -329,11 +333,15 @@ final class LensState {
 private struct LensRefracted<Content: View>: View {
     let lens: LensState
     let band: CGRect
+    let track: CGRect
+    let anchors: [CGFloat]
+    let trackRadius: CGFloat
     @ViewBuilder let content: Content
 
     var body: some View {
         TimelineView(.animation(minimumInterval: nil, paused: !lens.engaged)) { context in
-            content.modifier(GlassDropRefraction(geometry: lens.engaged ? lens.geometry(at: context.date, band: band).drop : nil))
+            content.modifier(GlassDropRefraction(geometry: lens.engaged ? lens.geometry(at: context.date, band: band).drop : nil,
+                                                 tracks: [track], trackRadius: trackRadius, anchors: anchors))
         }
     }
 }
@@ -461,3 +469,51 @@ extension GlassSegmented {
     .frame(width: 520)
 }
 
+
+/// Activity Monitor's track, measured off the capture in each appearance and laid over
+/// the window as white (dark) or black (light), so it sits on any window colour.
+///
+/// Dark: a capsule filled at 13% white, its top edge lit (37%, then 26%, 18%, falling to
+/// the fill), a glow along the bottom up to 19% and the bottom edge at 39%, and round
+/// its ends a dark hairline. Light: next to nothing - an outline of 4.5% black above and
+/// 5% below, and inside a faint grey dip across the middle, 2.4% at most.
+private struct AppleTrack: View {
+    var light = false
+
+    var body: some View {
+        if light {
+            let dip: [Double] = [255, 255, 255, 255, 255, 254, 254, 254, 253, 251, 251, 251, 250, 249, 249, 249,
+                                 249, 248, 248, 248, 249, 249, 249, 250, 250, 251, 251, 251, 252, 252, 252, 252,
+                                 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253,
+                                 253, 253, 253, 254, 254, 254, 254, 254, 254, 254, 255, 255, 255, 255, 255, 255,
+                                 255, 255, 255, 255, 255, 255, 255, 255]
+            Capsule(style: .continuous)
+                .fill(LinearGradient(stops: dip.enumerated().map { index, level in
+                    Gradient.Stop(color: .black.opacity((255 - level) / 255),
+                                  location: (Double(index) + 0.5) / Double(dip.count))
+                }, startPoint: .top, endPoint: .bottom))
+                .overlay(Capsule(style: .continuous).strokeBorder(
+                    LinearGradient(colors: [.black.opacity(0.045), .black.opacity(0.05)], startPoint: .top, endPoint: .bottom),
+                    lineWidth: 0.5))
+        } else {
+            let levels: [Double] = [119, 94, 77, 74, 72, 70, 69, 68, 68, 67, 67, 66, 66, 66,
+                                    65, 65, 65, 65, 65, 65, 65, 65, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66,
+                                    67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67,
+                                    68, 68, 68, 69, 69, 70, 70, 71, 72, 74, 76, 79, 96, 123]
+            Capsule(style: .continuous)
+                .fill(LinearGradient(stops: levels.enumerated().map { index, level in
+                    Gradient.Stop(color: .white.opacity((level - 38) / (255 - 38)),
+                                  location: (Double(index) + 0.5) / Double(levels.count))
+                }, startPoint: .top, endPoint: .bottom))
+                .overlay(
+                    Capsule(style: .continuous).strokeBorder(LinearGradient(stops: [
+                        .init(color: .clear, location: 0.06),
+                        .init(color: .black.opacity(0.4), location: 0.3),
+                        .init(color: .black.opacity(0.47), location: 0.5),
+                        .init(color: .black.opacity(0.4), location: 0.7),
+                        .init(color: .clear, location: 0.94),
+                    ], startPoint: .top, endPoint: .bottom), lineWidth: 0.5)
+                )
+        }
+    }
+}

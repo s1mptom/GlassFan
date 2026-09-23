@@ -25,10 +25,16 @@ struct GlassDropList<Row: View>: View {
     private var measured: Bool { count > 0 && rows.count == count }
 
     var body: some View {
-        DropRefracted(drop: drop, rows: rows) {
+        DropRefracted(drop: drop, rows: rows, cornerRadius: cornerRadius) {
             VStack(spacing: spacing) {
                 ForEach(0..<count, id: \.self) { index in
                     row(index)
+                        // Each row's card goes through the glass with it, as a segmented
+                        // control's track does: the drop pulls the card's lit edge into
+                        // its rim and shows the band inside it. The chosen row's card
+                        // is the platter while the drop rests.
+                        .background { RowCard(cornerRadius: cornerRadius)
+                            .opacity(index == selection && !drop.engaged ? 0 : 1) }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(space)) } action: {
                             frames[index] = $0
                         }
@@ -39,13 +45,6 @@ struct GlassDropList<Row: View>: View {
         .background(alignment: .topLeading) {
             DropGlass(drop: drop, rows: rows, resting: frames[selection], cornerRadius: cornerRadius,
                       size: size, selection: selection)
-        }
-        // Each row's frame, under the glass rather than in the rows. Drawn in the rows,
-        // it went through the lens with them and came out magnified inside the drop.
-        // And where the drop is, the frame is not: the chosen row's frame *is* the drop,
-        // so a row's frame fades as the drop covers it and comes back as it leaves.
-        .background(alignment: .topLeading) {
-            DropFrames(drop: drop, rows: rows, selection: selection, cornerRadius: cornerRadius)
         }
         .overlay(alignment: .topLeading) {
             DropLight(drop: drop, rows: rows, size: size)
@@ -335,13 +334,19 @@ final class DropListState {
 private struct DropRefracted<Content: View>: View {
     let drop: DropListState
     let rows: [CGRect]
+    let cornerRadius: CGFloat
     @ViewBuilder let content: Content
 
     var body: some View {
         TimelineView(.animation(minimumInterval: nil, paused: !drop.engaged)) { context in
+            // A row's text starts at its left, so it grows from there: grown about the
+            // drop's middle it slid a few points into the card's edge, where the glass
+            // stops growing anything so that the card's corners stay round, and was cut.
             content.modifier(GlassDropRefraction(geometry: drop.engaged
                                                      ? drop.geometry(at: context.date, rows: rows) : nil,
-                                                 reach: CGSize(width: 48, height: 48)))
+                                                 reach: CGSize(width: 48, height: 48),
+                                                 tracks: rows, trackRadius: cornerRadius,
+                                                 anchors: rows.first.map { [$0.minX] } ?? []))
         }
     }
 }
@@ -390,44 +395,57 @@ private struct DropGlass: View {
     }
 }
 
-/// The rows' frames, each faded by how much of it the drop covers - so the drop never
-/// sits over a frame of its own shape, and settles into a row by taking its frame's place.
-private struct DropFrames: View {
-    let drop: DropListState
-    let rows: [CGRect]
-    let selection: Int
+/// A row's card. On dark ground it is a segmented control's track as Apple draws it,
+/// in white over the window: filled at 13%, its top edge lit (37%, 26%, 18%, falling to
+/// the fill over some 3pt), a glow along the bottom up to 19% and the bottom edge at
+/// 39%, and down its sides a dark hairline - what the drop's rim is made of. On light
+/// ground, as Apple's track is there: a faint grey inside and an outline of 5% black.
+private struct RowCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     let cornerRadius: CGFloat
 
+    /// The top edge and the bottom, every half point from the edge in, as levels over
+    /// a ground of 38 - read off Activity Monitor's track.
+    private static let top: [Double] = [119, 94, 77, 74, 72, 70, 69, 68, 68, 67]
+    private static let bottom: [Double] = [123, 96, 79, 76, 74, 72, 71, 70, 70, 69, 69, 68]
+    private static let fill: Double = 66.5
+
     var body: some View {
-        if drop.engaged {
-            TimelineView(.animation) { context in
-                let bounds = drop.geometry(at: context.date, rows: rows).bounds
-                frames { index in 1 - min(Self.coverage(of: rows[index], by: bounds) * 1.4, 1) }
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if colorScheme == .dark {
+            GeometryReader { geometry in
+                shape.fill(LinearGradient(stops: Self.stops(height: geometry.size.height),
+                                          startPoint: .top, endPoint: .bottom))
+                    .overlay(shape.strokeBorder(LinearGradient(stops: [
+                        .init(color: .clear, location: 0.06),
+                        .init(color: .black.opacity(0.35), location: 0.3),
+                        .init(color: .black.opacity(0.4), location: 0.5),
+                        .init(color: .black.opacity(0.35), location: 0.7),
+                        .init(color: .clear, location: 0.94),
+                    ], startPoint: .top, endPoint: .bottom), lineWidth: 0.5))
             }
         } else {
-            frames { index in index == selection ? 0 : 1 }
+            // The track in the light appearance: a faint grey inside, an outline of 5%.
+            shape.fill(Color.black.opacity(0.012))
+                .overlay(shape.strokeBorder(LinearGradient(colors: [.black.opacity(0.045), .black.opacity(0.05)],
+                                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.5))
         }
     }
 
-    private func frames(_ opacity: @escaping (Int) -> CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, frame in
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Palette.ink.opacity(0.025))
-                    .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Palette.ink.opacity(0.07), lineWidth: 0.5))
-                    .frame(width: frame.width, height: frame.height)
-                    .offset(x: frame.minX, y: frame.minY)
-                    .opacity(opacity(index))
-            }
-        }
-    }
+    private static func white(_ level: Double) -> Color { .white.opacity((level - 38) / (255 - 38)) }
 
-    /// The share of `row` inside `drop`, 0...1.
-    static func coverage(of row: CGRect, by drop: CGRect) -> CGFloat {
-        let overlap = row.intersection(drop)
-        guard !overlap.isNull, row.width > 0, row.height > 0 else { return 0 }
-        return (overlap.width * overlap.height) / (row.width * row.height)
+    private static func stops(height: CGFloat) -> [Gradient.Stop] {
+        let h = max(Double(height), 12)
+        var stops: [Gradient.Stop] = []
+        for (i, level) in top.enumerated() {
+            stops.append(.init(color: white(level), location: (Double(i) * 0.5 + 0.25) / h))
+        }
+        stops.append(.init(color: white(fill), location: min(6 / h, 0.45)))
+        stops.append(.init(color: white(fill), location: max(1 - 7 / h, 0.55)))
+        for (i, level) in bottom.enumerated().reversed() {
+            stops.append(.init(color: white(level), location: 1 - (Double(i) * 0.5 + 0.25) / h))
+        }
+        return stops
     }
 }
 

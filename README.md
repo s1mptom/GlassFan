@@ -284,21 +284,31 @@ iOS — only to its own sliders and switches. GlassFan's segmented controls and 
 list build one: press anywhere and the selection lifts into a drop that follows the
 pointer, draws out with speed and settles onto whatever you let go over.
 
-Its shape was measured rather than guessed. Take a lossless screenshot of Activity
-Monitor with the drop held over its control, take another without it, and the two say
-what the glass does to what is under it, pixel column by pixel column: the body is
-magnified evenly — 1.10× about the centre — and the whole of the distortion sits in a
-narrow rim. That is why the track stays visible straight through the drop and its labels
-only grow rather than slide.
+Its look was fitted rather than guessed. Activity Monitor's segmented control was pressed
+with real mouse events and held still at fifteen places, in the dark appearance and in
+the light, and every part of GlassFan's drop was fitted against those frames on a bench
+of its own. What they showed:
 
-So the Metal shader is shaped like an ashtray rather than a lens: a flat floor that
-magnifies, and a bead around it whose two walls push the image out and then draw it
-back. That is what puts the edge of the surface underneath on screen twice, and hooks
-lines crossing the drop *outwards* at its ends, both of which Apple's drop does and a
-single bevel does not. No glow, no shadow, no bloom under the pointer — refraction, a
-thread of colour where the bend is hardest, and a dark hairline at the very edge.
+- **The glass hardly magnifies.** Labels under Apple's drop come out a tenth bigger, but
+  each about its own middle — two words under one drop grow about two different
+  points — so it is the control drawing them bigger, not the glass bending them. The
+  track stays where it is, round ends and all.
+- **The rim is a few parts, not one bevel:** a dark hairline; a thin line of colour —
+  what lies four points further in, pulled out to the edge, its channels parted, softer
+  and wider round the ends; and glass that dims what it covers.
+- **The dark band inside the top and bottom belongs to the track, not to the drop.**
+  Under the glass the track's own rim shows the window beyond its edge, which is why the
+  track looks narrower inside the drop — and the band stays put while the drop's outline
+  moves over it.
+- **The drop casts a shadow**, mostly downward, and is a shade darker under its top edge.
+  Both are a few per cent: plain on white, next to invisible on dark, which is why only
+  the light frames gave them away. Dark and light are the same drop in two tones.
+- **Its outline is SwiftUI's continuous capsule**, to a tenth of a point.
 
-Every number of that rim lives in one place, `LensTuning`, beside the shader itself.
+So the tracks and the curve cards are drawn as Activity Monitor's track is — a lit top
+edge, a glow along the bottom — because that is what the rim is made of. The Metal shader
+samples the rim four times a pixel, so the pulled-in line stays smooth at any zoom, and
+each appearance has its own set of numbers, all of them in `LensTuning` beside the shader.
 
 Its position, width, lift and stretch are four hand-stepped springs, so a click glides in
 one motion and a stalled frame pauses the drop instead of making it jump. At rest none of
