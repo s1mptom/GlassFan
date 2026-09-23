@@ -43,14 +43,26 @@ final class LensTuning: Sendable {
         /// the bottom one (negative: lighter).
         var innerShade, innerAt, innerWidth, innerBottom: Double
 
+        /// Written out plainly: Xcode 26's compiler gave up type-checking the same
+        /// thing as one array literal mapped in a closure.
         var arguments: [Shader.Argument] {
-            let values = [lineAt, lineReach, lineWidth, rbShift, bandFrom, bandTo, bandReach, ledgeLift,
-                          magnification, capPull, bodyAt, endSpread, edgeDark, lineGain, ledgeChroma, ledgeGain,
-                          endReach, rbBlur, blurDepth, endGlass, endBlur, lineSpread, endWidth, endChroma,
-                          shadowDark, shadowAt, shadowWidth, shadowUp, innerShade, innerAt, innerWidth, innerBottom]
-            return stride(from: 0, to: values.count, by: 4).map { i in
-                .float4(Float(values[i]), Float(values[i + 1]), Float(values[i + 2]), Float(values[i + 3]))
+            var values: [Double] = []
+            values += [lineAt, lineReach, lineWidth, rbShift]
+            values += [bandFrom, bandTo, bandReach, ledgeLift]
+            values += [magnification, capPull, bodyAt, endSpread]
+            values += [edgeDark, lineGain, ledgeChroma, ledgeGain]
+            values += [endReach, rbBlur, blurDepth, endGlass]
+            values += [endBlur, lineSpread, endWidth, endChroma]
+            values += [shadowDark, shadowAt, shadowWidth, shadowUp]
+            values += [innerShade, innerAt, innerWidth, innerBottom]
+            var packs: [Shader.Argument] = []
+            var i = 0
+            while i + 3 < values.count {
+                let x = Float(values[i]), y = Float(values[i + 1]), z = Float(values[i + 2]), w = Float(values[i + 3])
+                packs.append(Shader.Argument.float4(x, y, z, w))
+                i += 4
             }
+            return packs
         }
     }
 

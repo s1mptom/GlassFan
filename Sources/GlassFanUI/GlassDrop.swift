@@ -197,6 +197,8 @@ struct GlassDropRefraction: ViewModifier {
                 .offsetBy(dx: room, dy: room)
             let bounds = geometry.bounds
             let thick = min(geometry.head.width, geometry.head.height, geometry.tail.width, geometry.tail.height)
+            let trackFloats = Self.floats(tracks, room: room)
+            let anchorFloats: [Float] = (anchors.isEmpty ? [bounds.midX - room] : anchors).map { Float($0 + room) }
             content
                 .padding(room)
                 .layerEffect(
@@ -208,11 +210,9 @@ struct GlassDropRefraction: ViewModifier {
                                // The ink follows the scheme: dark labels in light mode.
                                .float(colorScheme == .light ? 1 : 0),
                            ] + LensTuning.shared.lensArguments(light: colorScheme == .light) + [
-                               .floatArray(tracks.isEmpty ? [0, 0, 0, 0] : tracks.flatMap {
-                                   [Float($0.minX + room), Float($0.minY + room), Float($0.width), Float($0.height)]
-                               }),
+                               .floatArray(trackFloats),
                                .float(trackRadius),
-                               .floatArray((anchors.isEmpty ? [bounds.midX - room] : anchors).map { Float($0 + room) }),
+                               .floatArray(anchorFloats),
                            ]),
                     // How far the drop reaches for what it shows: the magnified body,
                     // the bend of the rim, and the reflection beside it.
@@ -224,6 +224,19 @@ struct GlassDropRefraction: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+extension GlassDropRefraction {
+    /// The tracks as the shader takes them, four floats each, moved by `room`; one
+    /// empty track for none, since the shader wants an array to read.
+    static func floats(_ tracks: [CGRect], room: CGFloat) -> [Float] {
+        guard !tracks.isEmpty else { return [0, 0, 0, 0] }
+        var out: [Float] = []
+        for track in tracks {
+            out += [Float(track.minX + room), Float(track.minY + room), Float(track.width), Float(track.height)]
+        }
+        return out
     }
 }
 
