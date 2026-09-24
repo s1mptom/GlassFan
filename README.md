@@ -53,7 +53,9 @@ actual work.
   broken cleanly across sleep. Six sensors at a time, which is how many colours the
   palette has that stay apart for everyone; ticking a seventh is refused where you tick
   it rather than accepted and then not drawn.
-- **Menu bar** — both fans, the mode switch and the headline temperatures one click away.
+- **Menu bar** — the hottest reading at a fixed width, so the items beside it stay
+  put; both fans, the mode switch and the headline temperatures one click away. With the
+  window closed the Dock icon can go too (Settings › Glass).
 - **Liquid Glass throughout** — the screens are one grid of cards, the tabs sit in the
   window's own toolbar row, frost and tone are yours to set, and the selection is a drop
   of glass you can pick up — in the segmented controls and in the curve list, off one

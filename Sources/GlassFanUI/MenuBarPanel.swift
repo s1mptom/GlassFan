@@ -195,6 +195,7 @@ struct MenuBarPanel: View {
 enum MainWindowOpener {
     static func open(using openWindow: OpenWindowAction) {
         let panel = NSApp.keyWindow
+        DockPresence.windowOpening()
         NSApp.activate()
         openWindow(id: "main")
         DispatchQueue.main.async {

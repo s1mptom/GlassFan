@@ -212,7 +212,9 @@ struct GlassSegmented<Value: Hashable>: View {
         if items[index].value != selection {
             withoutImplicitAnimation { selection = items[index].value }
         }
-        lens.lift.tune(response: 0.36, dampingFraction: 0.9)
+        // Down fast and without a bounce: Apple's drop is back in its platter some
+        // 60 ms after it is let go; ours took half a second, and read as sinking.
+        lens.lift.tune(response: 0.12, dampingFraction: 1)
         lens.lift.target = 0
         lens.onSettled = {
             if lens.token == token, !lens.pressing { withoutImplicitAnimation { lens.engaged = false } }

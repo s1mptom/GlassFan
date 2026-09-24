@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(DaemonInstaller.self) private var installer
     @AppStorage(GlassStyle.frostKey) private var frost = GlassStyle.defaultFrost
     @AppStorage(GlassStyle.tintKey) private var tint = GlassStyle.defaultTint
+    @AppStorage(DockPresence.key) private var hidesFromDock = false
 
     private func configBinding() -> Binding<AppConfig>? {
         guard let current = client.draftConfig ?? client.snapshot?.config else { return nil }
@@ -130,6 +131,22 @@ struct SettingsView: View {
                 footnote: L10n.t("Регулирует подложку окна. Карточки всегда прозрачные.",
                                  "Adjusts the window backing. The cards stay clear.")
             )
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L10n.t("Убирать из Дока, когда окно закрыто", "Hide from the Dock while the window is closed"))
+                        .font(.system(size: 13))
+                    Text(L10n.t("GlassFan остаётся в строке меню.", "GlassFan stays in the menu bar."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.ink.opacity(0.55))
+                }
+                Spacer(minLength: 0)
+                Toggle(L10n.t("Убирать из Дока, когда окно закрыто", "Hide from the Dock while the window is closed"),
+                       isOn: $hidesFromDock)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            .onChange(of: hidesFromDock) { DockPresence.settingChanged() }
         }
     }
 

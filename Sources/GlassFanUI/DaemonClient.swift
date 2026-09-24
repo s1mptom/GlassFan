@@ -49,13 +49,12 @@ final class DaemonClient {
     var history: [HistorySample] { feed.history }
 
     /// What the menu bar's own label shows. It is on screen whatever the window is
-    /// doing, so this is kept fresh even while the rest is held back - and it is three
-    /// small pieces of text, not a screen.
+    /// doing, so this is kept fresh even while the rest is held back - and it is a
+    /// symbol and a number, not a screen.
     private(set) var headline = Headline()
 
     struct Headline: Equatable {
         var hottest: Double?
-        var fastestRPM: Double?
         var hasFans = false
     }
     private(set) var isConnected = false
@@ -222,7 +221,6 @@ final class DaemonClient {
                 held = fresh
             }
             headline = Headline(hottest: snapshot.sensors.max { $0.value < $1.value }?.value,
-                                fastestRPM: snapshot.fans.map(\.actualRPM).max(),
                                 hasFans: !snapshot.fans.isEmpty)
             reconcileConfig(with: snapshot.config)
 

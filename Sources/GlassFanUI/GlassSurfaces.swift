@@ -258,6 +258,32 @@ final class WindowVisibility {
     }
 }
 
+/// Whether GlassFan keeps its Dock icon while its window is closed. It runs either
+/// way - it lives in the menu bar - and with the window closed some would rather it
+/// lived only there. The window coming back brings the icon with it.
+@MainActor
+enum DockPresence {
+    static let key = "dock.hideWhileClosed"
+
+    static var hidesWhileClosed: Bool { UserDefaults.standard.bool(forKey: key) }
+
+    /// Before the window shows: an app without a Dock icon cannot bring a window front.
+    static func windowOpening() {
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+    }
+
+    static func windowClosed() {
+        if hidesWhileClosed { NSApp.setActivationPolicy(.accessory) }
+    }
+
+    /// The setting changed with the window closed, or open: open, the icon stays; the
+    /// choice takes effect at the next close.
+    static func settingChanged() {
+        guard hidesWhileClosed == false else { return }
+        windowOpening()
+    }
+}
+
 enum Diagnostics {
     /// Straight to stderr: a redirected GUI process buffers stdout, and a diagnostic
     /// that only appears at exit is no diagnostic at all.
@@ -290,6 +316,11 @@ struct WindowConfigurator: NSViewRepresentable {
             Self.centerOnce(window)
             WindowBlur.apply(radius: blurRadius, to: window)
             WindowVisibility.shared.track(window)
+            DockPresence.windowOpening()
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                                   object: window, queue: .main) { _ in
+                MainActor.assumeIsolated { DockPresence.windowClosed() }
+            }
 
             let cleared = Self.clearOpaqueBackings(in: window.contentView)
             Diagnostics.log("[window] isOpaque=\(window.isOpaque) "

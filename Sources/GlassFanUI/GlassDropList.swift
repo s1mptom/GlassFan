@@ -31,10 +31,9 @@ struct GlassDropList<Row: View>: View {
                     row(index)
                         // Each row's card goes through the glass with it, as a segmented
                         // control's track does: the drop pulls the card's lit edge into
-                        // its rim and shows the band inside it. The chosen row's card
-                        // is the platter while the drop rests.
-                        .background { RowCard(cornerRadius: cornerRadius)
-                            .opacity(index == selection && !drop.engaged ? 0 : 1) }
+                        // its rim and shows the band inside it. The chosen row is lit
+                        // from under, by the platter.
+                        .background { RowCard(cornerRadius: cornerRadius) }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(space)) } action: {
                             frames[index] = $0
                         }
@@ -144,7 +143,9 @@ struct GlassDropList<Row: View>: View {
         let drop = self.drop
         guard drop.token == token, !drop.pressing else { return }
         if index != selection, index < count { withoutImplicitAnimation { selection = index } }
-        drop.lift.tune(response: 0.36, dampingFraction: 0.9)
+        // Down fast and without a bounce: Apple's drop is back in its platter some
+        // 60 ms after it is let go; ours took half a second, and read as sinking.
+        drop.lift.tune(response: 0.12, dampingFraction: 1)
         drop.lift.target = 0
         drop.onSettled = {
             if drop.token == token, !drop.pressing {
@@ -376,9 +377,8 @@ private struct DropGlass: View {
                 // The row's platter fades as the drop lifts out of it; what is under a
                 // lifted drop is the ground and the rim.
                 let platter = DropOutline(geometry: geometry.insetBy(DropListState.grow * lift), bridged: false)
-                Color.clear
+                RowHighlight(shape: platter)
                     .frame(width: size.width, height: size.height)
-                    .glassEffect(.regular, in: platter)
                     .opacity(1 - lift)
             }
         } else if let resting {
@@ -388,17 +388,28 @@ private struct DropGlass: View {
     }
 
     private func platter(_ rect: CGRect) -> some View {
-        Color.clear
-            .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius, style: .continuous))
+        RowHighlight(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .frame(width: rect.width, height: rect.height)
             .offset(x: rect.minX, y: rect.minY)
     }
 }
 
+/// What lights the chosen row from under its card: its own light, not system glass.
+/// Glass takes its tone from whatever is behind the window, and on another Mac's
+/// wallpaper the chosen row came out darker than the rest instead of lighter.
+private struct RowHighlight<S: Shape>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let shape: S
+
+    var body: some View {
+        shape.fill(Color.white.opacity(colorScheme == .dark ? 0.06 : 0.55))
+    }
+}
+
 /// A row's card. On dark ground it is a segmented control's track as Apple draws it,
-/// in white over the window: filled at 13%, its top edge lit (37%, 26%, 18%, falling to
-/// the fill over some 3pt), a glow along the bottom up to 19% and the bottom edge at
-/// 39%, and down its sides a dark hairline - what the drop's rim is made of. On light
+/// in white over the window, a fifth darker: filled at 10%, its top edge lit (30%, 21%,
+/// 14%, falling to the fill over some 3pt), a glow along the bottom and the bottom edge
+/// at 31%, and down its sides a dark hairline - what the drop's rim is made of. On light
 /// ground, as Apple's track is there: a faint grey inside and an outline of 5% black.
 private struct RowCard: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -432,7 +443,10 @@ private struct RowCard: View {
         }
     }
 
-    private static func white(_ level: Double) -> Color { .white.opacity((level - 38) / (255 - 38)) }
+    /// A row a fifth darker than Apple's track, so the chosen one can be lighter.
+    private static let tone = 0.8
+
+    private static func white(_ level: Double) -> Color { .white.opacity((level - 38) / (255 - 38) * tone) }
 
     private static func stops(height: CGFloat) -> [Gradient.Stop] {
         let h = max(Double(height), 12)

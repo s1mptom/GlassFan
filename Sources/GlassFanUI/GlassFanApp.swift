@@ -101,26 +101,20 @@ public struct GlassFanApp: App {
     }
 }
 
-/// The strip in the menu bar: hottest sensor and the faster fan, nothing else.
+/// The strip in the menu bar: the hottest sensor, nothing else. The speeds are a
+/// click away in the panel; next to the temperature they took as much room again.
 struct MenuBarLabel: View {
     @Environment(DaemonClient.self) private var client
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        HStack(spacing: 4) {
-            // Off `headline` rather than the whole reading: this label is on screen
-            // whatever the window is doing, and the rest is held back while nobody is
-            // looking at it.
-            Image(systemName: !client.isConnected ? "exclamationmark.triangle"
-                  : client.headline.hasFans ? "fan" : "thermometer.medium")
-            if let hottest = client.headline.hottest {
-                Text(Format.temperature(hottest))
-            }
-            if let fastest = client.headline.fastestRPM, fastest > 0 {
-                Text(Format.rpm(fastest)).foregroundStyle(.secondary)
-            }
-        }
-        .monospacedDigit()
+        // Off `headline` rather than the whole reading: this label is on screen
+        // whatever the window is doing, and the rest is held back while nobody is
+        // looking at it.
+        Image(nsImage: Self.render(symbol: !client.isConnected ? "exclamationmark.triangle"
+                                        : client.headline.hasFans ? "fan" : "thermometer.medium",
+                                   temperature: client.headline.hottest.map(Format.temperature)))
+            .accessibilityLabel(client.headline.hottest.map(Format.temperature) ?? "GlassFan")
         // Measurement hook for the menu bar's "Open window": the label lives as
         // long as the app does, so it can reopen a closed window after the test
         // has moved focus to another app. GLASSFAN_REOPEN_PLAIN=1 uses the old,
@@ -137,6 +131,44 @@ struct MenuBarLabel: View {
             }
             try? await Task.sleep(for: .seconds(1))
             Diagnostics.log("[reopen] after:  " + MainWindowOpener.describe())
+        }
+    }
+}
+
+extension MenuBarLabel {
+    /// The label drawn as a picture. The menu bar takes a label's text and sets it in its
+    /// own font, digits proportional and every modifier dropped, and lays the items out
+    /// by width - so a reading going from 70 to 71 nudged every item after it. Drawn here,
+    /// the digits are fixed-width and the number keeps the width of its widest likely
+    /// value, so it changes in place. A template, so the menu bar colours it as it
+    /// would its own text.
+    @MainActor
+    static func render(symbol: String, temperature: String?) -> NSImage {
+        let size = NSFont.menuBarFont(ofSize: 0).pointSize
+        let content = HStack(spacing: 4) {
+            Image(systemName: symbol)
+            if let temperature {
+                Text(temperature).holdingWidth(of: "88°")
+            }
+        }
+        .font(.system(size: size))
+        .monospacedDigit()
+        .foregroundStyle(.black)
+        .padding(.vertical, 1)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        let image = renderer.nsImage ?? NSImage()
+        image.isTemplate = true
+        return image
+    }
+}
+
+private extension View {
+    /// At least as wide as `widest` would be, digit for digit.
+    func holdingWidth(of widest: String) -> some View {
+        ZStack(alignment: .trailing) {
+            Text(widest).hidden()
+            self
         }
     }
 }
@@ -254,9 +286,62 @@ struct MainWindow: View {
 
     private var status: some View {
         ConnectionStatus()
-            // The toolbar sets its last item sixteen points from the edge; the
-            // page's margin is twenty.
-            .padding(.trailing, 4)
+            .modifier(OnPageMargin())
+    }
+}
+
+/// Ends a toolbar item on the page's margin, level with the cards' right edges. The
+/// toolbar sets its last item some distance in from the window's edge, and that
+/// distance is the system's to choose: the fixed pad this replaced took it for sixteen
+/// points, and macOS 27 makes it four, which left the status hard against the corner.
+/// So it is measured, not assumed.
+private struct OnPageMargin: ViewModifier {
+    @State private var pad: CGFloat = 12
+
+    func body(content: Content) -> some View {
+        content
+            .background(EdgeDistance { distance in
+                // The distance is the toolbar's inset plus this pad, so one step lands
+                // it; the tolerance keeps rounding from nudging it back and forth.
+                let wanted = max(0, pad + Metrics.page - distance)
+                if abs(wanted - pad) > 0.5 { pad = wanted }
+            })
+            .padding(.trailing, pad)
+    }
+}
+
+/// Reports how far the view it sits behind ends from its window's right edge.
+private struct EdgeDistance: NSViewRepresentable {
+    let report: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> Probe { Probe() }
+
+    func updateNSView(_ view: Probe, context: Context) {
+        view.report = report
+    }
+
+    final class Probe: NSView {
+        var report: ((CGFloat) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            measureSoon()
+        }
+
+        override func layout() {
+            super.layout()
+            measureSoon()
+        }
+
+        /// After the pass that placed it: the toolbar positions its items once
+        /// they are sized, so a reading taken during layout can be of the old place.
+        private func measureSoon() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.window else { return }
+                let frame = self.convert(self.bounds, to: nil)
+                self.report?(window.frame.width - frame.maxX)
+            }
+        }
     }
 }
 
